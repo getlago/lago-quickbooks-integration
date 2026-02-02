@@ -1,0 +1,169 @@
+{
+  "name": "Lago Initial Customer Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "sync-customers",
+        "options": {}
+      },
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "sync-customers-trigger"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.LAGO_API_URL || 'https://api.getlago.com/api/v1' }}/customers",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "per_page",
+              "value": "100"
+            },
+            {
+              "name": "page",
+              "value": "={{ $json.page || 1 }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-lago-customers",
+      "name": "Fetch Lago Customers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lago-api-key",
+          "name": "Lago API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract customers from Lago response\nconst response = $input.first().json;\nconst customers = response.customers || [];\n\nreturn customers.map(customer => ({\n  json: {\n    webhook_type: 'customer.created',\n    object_type: 'customer',\n    customer: customer\n  }\n}));"
+      },
+      "id": "extract-customers",
+      "name": "Extract Customers",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $env.MAIN_WORKFLOW_ID }}",
+        "options": {}
+      },
+      "id": "call-main-workflow",
+      "name": "Process Each Customer",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate results\nconst items = $input.all();\nconst processed = items.length;\nconst errors = items.filter(item => item.json.error).length;\n\nreturn [{\n  json: {\n    message: 'Customer sync completed',\n    processed: processed,\n    errors: errors,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "aggregate-results",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-result",
+      "name": "Respond with Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Lago Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Lago Customers": {
+      "main": [
+        [
+          {
+            "node": "Extract Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Customers": {
+      "main": [
+        [
+          {
+            "node": "Process Each Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Each Customer": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Results": {
+      "main": [
+        [
+          {
+            "node": "Respond with Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Lago",
+      "id": "1"
+    },
+    {
+      "name": "Sync",
+      "id": "4"
+    }
+  ],
+  "pinData": {},
+  "versionId": "1"
+}

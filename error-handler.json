@@ -1,0 +1,181 @@
+{
+  "name": "Lago-QB Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract error information\nconst errorData = $input.first().json;\n\nconst errorInfo = {\n  workflow: errorData.workflow?.name || 'Unknown',\n  workflowId: errorData.workflow?.id || 'Unknown',\n  execution: errorData.execution?.id || 'Unknown',\n  node: errorData.execution?.lastNodeExecuted || 'Unknown',\n  errorMessage: errorData.execution?.error?.message || 'Unknown error',\n  errorStack: errorData.execution?.error?.stack || '',\n  timestamp: new Date().toISOString(),\n  \n  // Try to extract webhook data if available\n  webhookType: errorData.execution?.data?.resultData?.runData?.['Lago Webhook Receiver']?.[0]?.json?.webhook_type || 'Unknown',\n  lagoId: errorData.execution?.data?.resultData?.runData?.['Lago Webhook Receiver']?.[0]?.json?.customer?.lago_id ||\n          errorData.execution?.data?.resultData?.runData?.['Lago Webhook Receiver']?.[0]?.json?.invoice?.lago_id ||\n          'Unknown'\n};\n\nreturn [{ json: errorInfo }];"
+      },
+      "id": "extract-error",
+      "name": "Extract Error Info",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $json.timestamp }}",
+            "Workflow": "={{ $json.workflow }}",
+            "Node": "={{ $json.node }}",
+            "Webhook Type": "={{ $json.webhookType }}",
+            "Lago ID": "={{ $json.lagoId }}",
+            "Error": "={{ $json.errorMessage }}",
+            "Execution ID": "={{ $json.execution }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "log-to-sheet",
+      "name": "Log to Google Sheet (Optional)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [650, 200],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "channel": "#alerts",
+        "text": "=:warning: *Lago-QB Integration Error*\n\n*Workflow:* {{ $json.workflow }}\n*Node:* {{ $json.node }}\n*Webhook Type:* {{ $json.webhookType }}\n*Lago ID:* {{ $json.lagoId }}\n*Error:* {{ $json.errorMessage }}\n*Execution:* {{ $json.execution }}\n*Time:* {{ $json.timestamp }}",
+        "otherOptions": {}
+      },
+      "id": "slack-alert",
+      "name": "Slack Alert (Optional)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [650, 400],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-retryable",
+              "leftValue": "={{ $json.errorMessage }}",
+              "rightValue": "timeout|rate limit|429|503|504",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-retryable",
+      "name": "Is Retryable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Queue for retry (you could use a database or message queue)\nconst errorInfo = $input.first().json;\n\n// Log retry attempt\nconsole.log(`Queuing retry for execution ${errorInfo.execution}`);\n\n// In a real implementation, you might:\n// 1. Store in a database\n// 2. Push to a message queue (Redis, RabbitMQ)\n// 3. Use N8N's built-in retry mechanism\n\nreturn [{\n  json: {\n    ...errorInfo,\n    action: 'queued_for_retry',\n    retryAt: new Date(Date.now() + 5 * 60 * 1000).toISOString() // 5 minutes\n  }\n}];"
+      },
+      "id": "queue-retry",
+      "name": "Queue for Retry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mark as failed - no automatic retry\nconst errorInfo = $input.first().json;\n\nconsole.log(`Error marked as failed (no retry): ${errorInfo.execution}`);\n\nreturn [{\n  json: {\n    ...errorInfo,\n    action: 'marked_as_failed',\n    requiresManualIntervention: true\n  }\n}];"
+      },
+      "id": "mark-failed",
+      "name": "Mark as Failed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 400]
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Error Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Error Info": {
+      "main": [
+        [
+          {
+            "node": "Log to Google Sheet (Optional)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Alert (Optional)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is Retryable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Retryable?": {
+      "main": [
+        [
+          {
+            "node": "Queue for Retry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark as Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Error Handling",
+      "id": "5"
+    }
+  ],
+  "pinData": {},
+  "versionId": "1"
+}

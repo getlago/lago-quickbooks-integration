@@ -1,0 +1,798 @@
+{
+  "name": "Lago to QuickBooks Integration",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lago-webhook",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "webhook-receiver",
+      "name": "Lago Webhook Receiver",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "lago-webhook-endpoint"
+    },
+    {
+      "parameters": {
+        "jsCode": "/*\n * ========================================\n * CONFIGURATION - Edit these values\n * ========================================\n */\nconst CONFIG = {\n  // Lago Settings\n  LAGO_WEBHOOK_SECRET: 'your_lago_webhook_secret_here',\n  BYPASS_SIGNATURE: true,  // Set to false in production\n  \n  // QuickBooks Settings\n  QB_ENVIRONMENT: 'sandbox',  // 'sandbox' or 'production'\n  QB_REALM_ID: 'your_quickbooks_company_id',\n  QB_DEFAULT_ITEM_ID: '1',\n  QB_DISCOUNT_ACCOUNT_ID: '1'\n};\n/* ======================================== */\n\nconst item = $input.first();\nconst body = item.json.body || item.json;\nconst headers = item.json.headers || {};\n\nif (!CONFIG.BYPASS_SIGNATURE) {\n  const crypto = require('crypto');\n  const signature = headers['x-lago-signature'] || headers['X-Lago-Signature'] || '';\n  const expectedSignature = crypto\n    .createHmac('sha256', CONFIG.LAGO_WEBHOOK_SECRET)\n    .update(JSON.stringify(body))\n    .digest('hex');\n  if (signature !== expectedSignature) {\n    throw new Error('Invalid webhook signature');\n  }\n}\n\n// Return the webhook payload with config\nreturn [{\n  json: {\n    ...body,\n    _config: CONFIG,\n    _verified: true,\n    _receivedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "verify-signature",
+      "name": "Verify HMAC Signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.webhook_type }}",
+                    "rightValue": "customer.created",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "customer_created"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.webhook_type }}",
+                    "rightValue": "customer.updated",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "customer_updated"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.webhook_type }}",
+                    "rightValue": "invoice.generated",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "invoice_generated"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.webhook_type }}",
+                    "rightValue": "invoice.payment_status_updated",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "payment_updated"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.webhook_type }}",
+                    "rightValue": "credit_note.generated",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "credit_note_generated"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "route-webhook",
+      "name": "Route by Webhook Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst CONFIG = input._config;\nconst lagoCustomer = input.customer;\n\nconst displayName = lagoCustomer.name || \n  [lagoCustomer.firstname, lagoCustomer.lastname].filter(Boolean).join(' ') || \n  lagoCustomer.legal_name || \n  lagoCustomer.external_id;\n\nconst qbCustomer = {\n  DisplayName: displayName.substring(0, 100),\n  CompanyName: lagoCustomer.legal_name || lagoCustomer.name || undefined,\n  GivenName: lagoCustomer.firstname || undefined,\n  FamilyName: lagoCustomer.lastname || undefined,\n  PrimaryEmailAddr: lagoCustomer.email ? { Address: lagoCustomer.email } : undefined,\n  PrimaryPhone: lagoCustomer.phone ? { FreeFormNumber: lagoCustomer.phone } : undefined,\n  BillAddr: {\n    Line1: lagoCustomer.address_line1 || undefined,\n    Line2: lagoCustomer.address_line2 || undefined,\n    City: lagoCustomer.city || undefined,\n    CountrySubDivisionCode: lagoCustomer.state || undefined,\n    PostalCode: lagoCustomer.zipcode || undefined,\n    Country: lagoCustomer.country || undefined\n  },\n  CurrencyRef: lagoCustomer.currency ? { value: lagoCustomer.currency } : undefined,\n  Notes: `Lago ID: ${lagoCustomer.lago_id}\\nExternal ID: ${lagoCustomer.external_id}`\n};\n\nconst cleanObject = (obj) => {\n  Object.keys(obj).forEach(key => {\n    if (obj[key] === undefined) delete obj[key];\n    else if (typeof obj[key] === 'object' && obj[key] !== null) {\n      cleanObject(obj[key]);\n      if (Object.keys(obj[key]).length === 0) delete obj[key];\n    }\n  });\n};\ncleanObject(qbCustomer);\n\nreturn [{ json: { qbCustomer, lagoCustomerId: lagoCustomer.lago_id, _config: CONFIG } }];"
+      },
+      "id": "transform-customer-create",
+      "name": "Transform Customer Create",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst CONFIG = input._config;\nconst lagoCustomer = input.customer;\n\nconst displayName = lagoCustomer.name || \n  [lagoCustomer.firstname, lagoCustomer.lastname].filter(Boolean).join(' ') || \n  lagoCustomer.legal_name || \n  lagoCustomer.external_id;\n\nconst qbCustomer = {\n  DisplayName: displayName.substring(0, 100),\n  CompanyName: lagoCustomer.legal_name || lagoCustomer.name || undefined,\n  GivenName: lagoCustomer.firstname || undefined,\n  FamilyName: lagoCustomer.lastname || undefined,\n  PrimaryEmailAddr: lagoCustomer.email ? { Address: lagoCustomer.email } : undefined,\n  PrimaryPhone: lagoCustomer.phone ? { FreeFormNumber: lagoCustomer.phone } : undefined,\n  BillAddr: {\n    Line1: lagoCustomer.address_line1 || undefined,\n    Line2: lagoCustomer.address_line2 || undefined,\n    City: lagoCustomer.city || undefined,\n    CountrySubDivisionCode: lagoCustomer.state || undefined,\n    PostalCode: lagoCustomer.zipcode || undefined,\n    Country: lagoCustomer.country || undefined\n  },\n  CurrencyRef: lagoCustomer.currency ? { value: lagoCustomer.currency } : undefined,\n  Notes: `Lago ID: ${lagoCustomer.lago_id}\\nExternal ID: ${lagoCustomer.external_id}`\n};\n\nconst cleanObject = (obj) => {\n  Object.keys(obj).forEach(key => {\n    if (obj[key] === undefined) delete obj[key];\n    else if (typeof obj[key] === 'object' && obj[key] !== null) {\n      cleanObject(obj[key]);\n      if (Object.keys(obj[key]).length === 0) delete obj[key];\n    }\n  });\n};\ncleanObject(qbCustomer);\n\nreturn [{ json: { qbCustomer, lagoCustomerId: lagoCustomer.lago_id, _config: CONFIG } }];"
+      },
+      "id": "transform-customer-update",
+      "name": "Transform Customer Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 250]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/query?query=SELECT * FROM Customer WHERE DisplayName = '{{ $json.qbCustomer.DisplayName }}'",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "options": {}
+      },
+      "id": "lookup-customer",
+      "name": "Lookup Customer in QB",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 175],
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "quickbooks-oauth2",
+          "name": "QuickBooks OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputData = $('Transform Customer Create').first()?.json || $('Transform Customer Update').first()?.json;\nconst queryResponse = $input.first().json;\nconst CONFIG = inputData._config;\n\nconst existingCustomers = queryResponse?.QueryResponse?.Customer || [];\nconst customerExists = existingCustomers.length > 0;\n\nlet qbCustomer = { ...inputData.qbCustomer };\nif (customerExists) {\n  qbCustomer.Id = existingCustomers[0].Id;\n  qbCustomer.SyncToken = existingCustomers[0].SyncToken;\n  qbCustomer.sparse = true;\n}\n\nreturn [{ json: { qbCustomer, customerExists, lagoCustomerId: inputData.lagoCustomerId, _config: CONFIG } }];"
+      },
+      "id": "prepare-customer-upsert",
+      "name": "Prepare Customer Upsert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 175]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/customer",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.qbCustomer) }}",
+        "options": {}
+      },
+      "id": "upsert-customer",
+      "name": "Create Update Customer QB",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1500, 175],
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "quickbooks-oauth2",
+          "name": "QuickBooks OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst CONFIG = input._config;\nconst lagoInvoice = input.invoice;\nconst lagoCustomer = lagoInvoice.customer;\n\nconst centsToDollars = (cents) => Number((cents / 100).toFixed(2));\n\n// Compute customer DisplayName for lookup\nconst customerDisplayName = (lagoCustomer.name || [lagoCustomer.firstname, lagoCustomer.lastname].filter(Boolean).join(' ') || lagoCustomer.legal_name || lagoCustomer.external_id).substring(0, 100);\n\nconst lineItems = [];\nlet lineNum = 1;\n\nif (lagoInvoice.fees && lagoInvoice.fees.length > 0) {\n  for (const fee of lagoInvoice.fees) {\n    const description = fee.item?.invoice_display_name || fee.item?.name || fee.description || 'Fee';\n    lineItems.push({\n      LineNum: lineNum++,\n      Amount: centsToDollars(fee.amount_cents),\n      DetailType: 'SalesItemLineDetail',\n      Description: description.substring(0, 4000),\n      SalesItemLineDetail: {\n        Qty: parseFloat(fee.units) || 1,\n        UnitPrice: parseFloat(fee.precise_unit_amount) || centsToDollars(fee.amount_cents),\n        ItemRef: { value: CONFIG.QB_DEFAULT_ITEM_ID, name: 'Services' },\n        TaxCodeRef: { value: fee.taxes_rate > 0 ? 'TAX' : 'NON' }\n      }\n    });\n  }\n}\n\nif (lagoInvoice.credits && lagoInvoice.credits.length > 0) {\n  for (const credit of lagoInvoice.credits) {\n    lineItems.push({\n      LineNum: lineNum++,\n      Amount: centsToDollars(credit.amount_cents),\n      DetailType: 'DiscountLineDetail',\n      Description: credit.item?.name || 'Credit',\n      DiscountLineDetail: { PercentBased: false, DiscountAccountRef: { value: CONFIG.QB_DISCOUNT_ACCOUNT_ID } }\n    });\n  }\n}\n\nconst qbInvoice = {\n  CustomerRef: { value: 'PLACEHOLDER' },\n  DocNumber: lagoInvoice.number,\n  TxnDate: lagoInvoice.issuing_date,\n  DueDate: lagoInvoice.payment_due_date,\n  CurrencyRef: { value: lagoInvoice.currency },\n  Line: lineItems,\n  PrivateNote: `Lago Invoice: ${lagoInvoice.lago_id}`,\n  CustomerMemo: { value: `Invoice ${lagoInvoice.number}` }\n};\n\nif (lagoCustomer.email) qbInvoice.BillEmail = { Address: lagoCustomer.email };\n\nreturn [{ json: { qbInvoice, qbCustomer: { DisplayName: customerDisplayName }, lagoInvoiceId: lagoInvoice.lago_id, lagoInvoiceNumber: lagoInvoice.number, lagoCustomerId: lagoCustomer.lago_id, _config: CONFIG } }];"
+      },
+      "id": "transform-invoice",
+      "name": "Transform Invoice",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/query?query=SELECT * FROM Customer WHERE DisplayName = '{{ $json.qbCustomer.DisplayName }}'",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "options": {}
+      },
+      "id": "lookup-customer-for-invoice",
+      "name": "Lookup Customer for Invoice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 400],
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "quickbooks-oauth2",
+          "name": "QuickBooks OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const invoiceData = $('Transform Invoice').first().json;\nconst customerQuery = $input.first().json;\nconst CONFIG = invoiceData._config;\n\nconst existingCustomers = customerQuery?.QueryResponse?.Customer || [];\nif (existingCustomers.length === 0) throw new Error(`Customer not found for Lago ID: ${invoiceData.lagoCustomerId}`);\n\nconst customerId = existingCustomers[0].Id;\nlet qbInvoice = { ...invoiceData.qbInvoice };\nqbInvoice.CustomerRef = { value: customerId };\n\nreturn [{ json: { qbInvoice, qbCustomerId: customerId, lagoInvoiceId: invoiceData.lagoInvoiceId, lagoInvoiceNumber: invoiceData.lagoInvoiceNumber, _config: CONFIG } }];"
+      },
+      "id": "finalize-invoice",
+      "name": "Finalize Invoice",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/invoice",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.qbInvoice) }}",
+        "options": {}
+      },
+      "id": "create-invoice",
+      "name": "Create Invoice in QB",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1500, 400],
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "quickbooks-oauth2",
+          "name": "QuickBooks OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst CONFIG = input._config;\nconst lagoCreditNote = input.credit_note;\nconst lagoCustomer = lagoCreditNote.customer;\n\nconst centsToDollars = (cents) => Number((cents / 100).toFixed(2));\n\n// Compute customer DisplayName for lookup\nconst customerDisplayName = (lagoCustomer.name || [lagoCustomer.firstname, lagoCustomer.lastname].filter(Boolean).join(' ') || lagoCustomer.legal_name || lagoCustomer.external_id).substring(0, 100);\n\nconst lineItems = [];\nif (lagoCreditNote.items && lagoCreditNote.items.length > 0) {\n  let lineNum = 1;\n  for (const item of lagoCreditNote.items) {\n    lineItems.push({\n      LineNum: lineNum++,\n      Amount: centsToDollars(item.amount_cents),\n      DetailType: 'SalesItemLineDetail',\n      Description: item.fee?.item?.name || 'Credit Note Item',\n      SalesItemLineDetail: { Qty: 1, UnitPrice: centsToDollars(item.amount_cents), ItemRef: { value: CONFIG.QB_DEFAULT_ITEM_ID, name: 'Services' } }\n    });\n  }\n}\n\nif (lineItems.length === 0) {\n  lineItems.push({\n    LineNum: 1,\n    Amount: centsToDollars(lagoCreditNote.total_amount_cents || 0),\n    DetailType: 'SalesItemLineDetail',\n    Description: `Credit Note: ${lagoCreditNote.reason || 'Adjustment'}`,\n    SalesItemLineDetail: { Qty: 1, UnitPrice: centsToDollars(lagoCreditNote.total_amount_cents || 0), ItemRef: { value: CONFIG.QB_DEFAULT_ITEM_ID, name: 'Services' } }\n  });\n}\n\nconst qbCreditMemo = {\n  CustomerRef: { value: 'PLACEHOLDER' },\n  DocNumber: lagoCreditNote.number,\n  TxnDate: lagoCreditNote.issuing_date,\n  CurrencyRef: { value: lagoCreditNote.currency },\n  Line: lineItems,\n  PrivateNote: `Lago Credit Note: ${lagoCreditNote.lago_id}`,\n  CustomerMemo: { value: `Credit Note ${lagoCreditNote.number}` }\n};\n\nif (lagoCustomer.email) qbCreditMemo.BillEmail = { Address: lagoCustomer.email };\n\nreturn [{ json: { qbCreditMemo, qbCustomer: { DisplayName: customerDisplayName }, lagoCreditNoteId: lagoCreditNote.lago_id, lagoCreditNoteNumber: lagoCreditNote.number, lagoCustomerId: lagoCustomer.lago_id, _config: CONFIG } }];"
+      },
+      "id": "transform-credit-note",
+      "name": "Transform Credit Note",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 550]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/query?query=SELECT * FROM Customer WHERE DisplayName = '{{ $json.qbCustomer.DisplayName }}'",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "options": {}
+      },
+      "id": "lookup-customer-for-credit-note",
+      "name": "Lookup Customer for CN",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 550],
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "quickbooks-oauth2",
+          "name": "QuickBooks OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const creditNoteData = $('Transform Credit Note').first().json;\nconst customerQuery = $input.first().json;\nconst CONFIG = creditNoteData._config;\n\nconst existingCustomers = customerQuery?.QueryResponse?.Customer || [];\nif (existingCustomers.length === 0) throw new Error(`Customer not found for Lago ID: ${creditNoteData.lagoCustomerId}`);\n\nconst customerId = existingCustomers[0].Id;\nlet qbCreditMemo = { ...creditNoteData.qbCreditMemo };\nqbCreditMemo.CustomerRef = { value: customerId };\n\nreturn [{ json: { qbCreditMemo, qbCustomerId: customerId, lagoCreditNoteId: creditNoteData.lagoCreditNoteId, _config: CONFIG } }];"
+      },
+      "id": "finalize-credit-note",
+      "name": "Finalize Credit Note",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 550]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/creditmemo",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.qbCreditMemo) }}",
+        "options": {}
+      },
+      "id": "create-credit-memo",
+      "name": "Create Credit Memo QB",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1500, 550],
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "quickbooks-oauth2",
+          "name": "QuickBooks OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst CONFIG = input._config;\nconst lagoInvoice = input.invoice;\n\nreturn [{ json: { lagoInvoiceId: lagoInvoice.lago_id, lagoInvoiceNumber: lagoInvoice.number, paymentStatus: lagoInvoice.payment_status, totalAmountCents: lagoInvoice.total_amount_cents, currency: lagoInvoice.currency, lagoCustomerId: lagoInvoice.customer.lago_id, _config: CONFIG } }];"
+      },
+      "id": "extract-payment-info",
+      "name": "Extract Payment Info",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 700]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/query?query=SELECT * FROM Invoice WHERE DocNumber = '{{ $json.lagoInvoiceNumber }}'",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "options": {}
+      },
+      "id": "lookup-invoice-for-payment",
+      "name": "Lookup Invoice for Payment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 700],
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "quickbooks-oauth2",
+          "name": "QuickBooks OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "payment-succeeded",
+              "leftValue": "={{ $('Extract Payment Info').first().json.paymentStatus }}",
+              "rightValue": "succeeded",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-payment-status",
+      "name": "Payment Succeeded",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1300, 700]
+    },
+    {
+      "parameters": {
+        "jsCode": "const paymentInfo = $('Extract Payment Info').first().json;\nconst invoiceQuery = $('Lookup Invoice for Payment').first().json;\nconst CONFIG = paymentInfo._config;\n\nconst invoices = invoiceQuery?.QueryResponse?.Invoice || [];\nif (invoices.length === 0) throw new Error(`Invoice not found: ${paymentInfo.lagoInvoiceNumber}`);\n\nconst qbInvoice = invoices[0];\nconst centsToDollars = (cents) => Number((cents / 100).toFixed(2));\n\nconst qbPayment = {\n  CustomerRef: { value: qbInvoice.CustomerRef.value },\n  TotalAmt: centsToDollars(paymentInfo.totalAmountCents),\n  CurrencyRef: { value: paymentInfo.currency },\n  Line: [{ Amount: centsToDollars(paymentInfo.totalAmountCents), LinkedTxn: [{ TxnId: qbInvoice.Id, TxnType: 'Invoice' }] }],\n  PrivateNote: `Payment for Lago Invoice: ${paymentInfo.lagoInvoiceNumber}`\n};\n\nreturn [{ json: { qbPayment, qbInvoiceId: qbInvoice.Id, lagoInvoiceNumber: paymentInfo.lagoInvoiceNumber, _config: CONFIG } }];"
+      },
+      "id": "create-payment-object",
+      "name": "Create Payment Object",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1500, 650]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/payment",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.qbPayment) }}",
+        "options": {}
+      },
+      "id": "create-payment",
+      "name": "Create Payment in QB",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1700, 650],
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "quickbooks-oauth2",
+          "name": "QuickBooks OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log non-succeeded payment status\nconst paymentInfo = $('Extract Payment Info').first().json;\n\nconsole.log(`Payment status for invoice ${paymentInfo.lagoInvoiceNumber}: ${paymentInfo.paymentStatus}`);\n\nreturn [{\n  json: {\n    message: `Payment status '${paymentInfo.paymentStatus}' logged for invoice ${paymentInfo.lagoInvoiceNumber}`,\n    lagoInvoiceId: paymentInfo.lagoInvoiceId,\n    status: paymentInfo.paymentStatus\n  }\n}];"
+      },
+      "id": "log-payment-status",
+      "name": "Log Payment Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1500, 800]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, message: 'Webhook processed', timestamp: new Date().toISOString() }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1900, 400]
+    }
+  ],
+  "connections": {
+    "Lago Webhook Receiver": {
+      "main": [
+        [
+          {
+            "node": "Verify HMAC Signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify HMAC Signature": {
+      "main": [
+        [
+          {
+            "node": "Route by Webhook Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Webhook Type": {
+      "main": [
+        [
+          {
+            "node": "Transform Customer Create",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Transform Customer Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Transform Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract Payment Info",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Transform Credit Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Customer Create": {
+      "main": [
+        [
+          {
+            "node": "Lookup Customer in QB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Customer Update": {
+      "main": [
+        [
+          {
+            "node": "Lookup Customer in QB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Customer in QB": {
+      "main": [
+        [
+          {
+            "node": "Prepare Customer Upsert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Customer Upsert": {
+      "main": [
+        [
+          {
+            "node": "Create Update Customer QB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Update Customer QB": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Invoice": {
+      "main": [
+        [
+          {
+            "node": "Lookup Customer for Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Customer for Invoice": {
+      "main": [
+        [
+          {
+            "node": "Finalize Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Invoice": {
+      "main": [
+        [
+          {
+            "node": "Create Invoice in QB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Invoice in QB": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Credit Note": {
+      "main": [
+        [
+          {
+            "node": "Lookup Customer for CN",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Customer for CN": {
+      "main": [
+        [
+          {
+            "node": "Finalize Credit Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Credit Note": {
+      "main": [
+        [
+          {
+            "node": "Create Credit Memo QB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Credit Memo QB": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Payment Info": {
+      "main": [
+        [
+          {
+            "node": "Lookup Invoice for Payment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Invoice for Payment": {
+      "main": [
+        [
+          {
+            "node": "Payment Succeeded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Payment Succeeded": {
+      "main": [
+        [
+          {
+            "node": "Create Payment Object",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Payment Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Payment Object": {
+      "main": [
+        [
+          {
+            "node": "Create Payment in QB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Payment in QB": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Payment Status": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": {}
+}

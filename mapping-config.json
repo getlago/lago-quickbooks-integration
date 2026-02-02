@@ -1,0 +1,339 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Lago to QuickBooks Mapping Configuration",
+  "description": "Configuration for mapping Lago entities to QuickBooks entities",
+  
+  "customer": {
+    "description": "Customer field mappings from Lago to QuickBooks",
+    "mappings": {
+      "DisplayName": {
+        "source": ["name", "firstname + lastname", "legal_name", "external_id"],
+        "priority": "first_non_empty",
+        "maxLength": 100
+      },
+      "CompanyName": {
+        "source": ["legal_name", "name"],
+        "priority": "first_non_empty"
+      },
+      "GivenName": {
+        "source": "firstname"
+      },
+      "FamilyName": {
+        "source": "lastname"
+      },
+      "PrimaryEmailAddr.Address": {
+        "source": "email"
+      },
+      "PrimaryPhone.FreeFormNumber": {
+        "source": "phone"
+      },
+      "WebAddr.URI": {
+        "source": "url"
+      },
+      "BillAddr": {
+        "Line1": "address_line1",
+        "Line2": "address_line2",
+        "City": "city",
+        "CountrySubDivisionCode": "state",
+        "PostalCode": "zipcode",
+        "Country": "country"
+      },
+      "ShipAddr": {
+        "source": "shipping_address",
+        "Line1": "address_line1",
+        "Line2": "address_line2",
+        "City": "city",
+        "CountrySubDivisionCode": "state",
+        "PostalCode": "zipcode",
+        "Country": "country"
+      },
+      "TaxIdentificationNumber": {
+        "source": "tax_identification_number"
+      },
+      "CurrencyRef.value": {
+        "source": "currency"
+      },
+      "Notes": {
+        "template": "Lago ID: {lago_id}\nExternal ID: {external_id}\nSlug: {slug}"
+      }
+    }
+  },
+
+  "invoice": {
+    "description": "Invoice field mappings from Lago to QuickBooks",
+    "mappings": {
+      "DocNumber": {
+        "source": "number"
+      },
+      "TxnDate": {
+        "source": "issuing_date"
+      },
+      "DueDate": {
+        "source": "payment_due_date"
+      },
+      "CurrencyRef.value": {
+        "source": "currency"
+      },
+      "PrivateNote": {
+        "template": "Lago Invoice ID: {lago_id}\nLago Number: {number}\nType: {invoice_type}"
+      },
+      "CustomerMemo.value": {
+        "template": "Invoice {number}"
+      },
+      "BillEmail.Address": {
+        "source": "customer.email"
+      }
+    },
+    "lineItems": {
+      "fees": {
+        "description": "Map Lago fees to QuickBooks SalesItemLineDetail",
+        "Amount": {
+          "source": "amount_cents",
+          "transform": "cents_to_dollars"
+        },
+        "DetailType": "SalesItemLineDetail",
+        "Description": {
+          "source": ["item.invoice_display_name", "item.name", "description"],
+          "priority": "first_non_empty",
+          "fallback": "{item.type}: {item.code}"
+        },
+        "SalesItemLineDetail": {
+          "Qty": {
+            "source": "units",
+            "default": 1
+          },
+          "UnitPrice": {
+            "source": "precise_unit_amount"
+          },
+          "ItemRef": {
+            "comment": "Map to QuickBooks Item - can be configured per Lago item code",
+            "defaultValue": "1",
+            "defaultName": "Services"
+          },
+          "TaxCodeRef": {
+            "comment": "TAX if taxes_rate > 0, else NON",
+            "taxable": "TAX",
+            "nonTaxable": "NON"
+          }
+        }
+      },
+      "credits": {
+        "description": "Map Lago credits/coupons to QuickBooks DiscountLineDetail",
+        "DetailType": "DiscountLineDetail",
+        "Amount": {
+          "source": "amount_cents",
+          "transform": "cents_to_dollars",
+          "negate": true
+        },
+        "Description": {
+          "template": "{item.name} ({item.code})"
+        },
+        "DiscountLineDetail": {
+          "PercentBased": false,
+          "DiscountAccountRef": {
+            "comment": "Configure your QuickBooks discount account ID",
+            "envVar": "QB_DISCOUNT_ACCOUNT_ID",
+            "default": "1"
+          }
+        }
+      }
+    },
+    "taxes": {
+      "description": "Map Lago applied_taxes to QuickBooks TxnTaxDetail",
+      "TotalTax": {
+        "source": "taxes_amount_cents",
+        "transform": "cents_to_dollars"
+      },
+      "TaxLine": {
+        "Amount": {
+          "source": "amount_cents",
+          "transform": "cents_to_dollars"
+        },
+        "TaxLineDetail": {
+          "TaxRateRef.value": {
+            "source": "tax_code",
+            "comment": "Map Lago tax_code to QuickBooks Tax Rate ID"
+          },
+          "PercentBased": true,
+          "TaxPercent": {
+            "source": "tax_rate"
+          },
+          "NetAmountTaxable": {
+            "source": "fees_amount_cents",
+            "transform": "cents_to_dollars"
+          }
+        }
+      }
+    }
+  },
+
+  "creditNote": {
+    "description": "Credit Note field mappings from Lago to QuickBooks Credit Memo",
+    "mappings": {
+      "DocNumber": {
+        "source": "number"
+      },
+      "TxnDate": {
+        "source": "issuing_date"
+      },
+      "CurrencyRef.value": {
+        "source": "currency"
+      },
+      "PrivateNote": {
+        "template": "Lago Credit Note ID: {lago_id}\nReason: {reason}\nOriginal Invoice: {invoice.number}"
+      },
+      "CustomerMemo.value": {
+        "template": "Credit Note {number}"
+      }
+    },
+    "lineItems": {
+      "items": {
+        "Amount": {
+          "source": "amount_cents",
+          "transform": "cents_to_dollars"
+        },
+        "DetailType": "SalesItemLineDetail",
+        "Description": {
+          "source": ["fee.item.invoice_display_name", "fee.item.name"],
+          "fallback": "Credit Note Item"
+        },
+        "SalesItemLineDetail": {
+          "Qty": 1,
+          "UnitPrice": {
+            "source": "amount_cents",
+            "transform": "cents_to_dollars"
+          },
+          "ItemRef": {
+            "defaultValue": "1",
+            "defaultName": "Services"
+          }
+        }
+      }
+    }
+  },
+
+  "payment": {
+    "description": "Payment status mapping from Lago to QuickBooks Payment",
+    "statusMapping": {
+      "succeeded": {
+        "action": "create_payment",
+        "comment": "Create a Payment in QuickBooks linked to the Invoice"
+      },
+      "failed": {
+        "action": "log_only",
+        "comment": "Log the failed payment - QB doesn't have failed payment concept"
+      },
+      "pending": {
+        "action": "log_only",
+        "comment": "Log pending status - no action in QB"
+      },
+      "refunded": {
+        "action": "create_refund",
+        "comment": "Create a Refund Receipt in QuickBooks (if needed)"
+      }
+    },
+    "mappings": {
+      "TotalAmt": {
+        "source": "total_amount_cents",
+        "transform": "cents_to_dollars"
+      },
+      "CurrencyRef.value": {
+        "source": "currency"
+      },
+      "Line": {
+        "Amount": {
+          "source": "total_amount_cents",
+          "transform": "cents_to_dollars"
+        },
+        "LinkedTxn": {
+          "TxnId": {
+            "comment": "QuickBooks Invoice ID - looked up by DocNumber"
+          },
+          "TxnType": "Invoice"
+        }
+      },
+      "PrivateNote": {
+        "template": "Payment for Lago Invoice: {number}\nLago Invoice ID: {lago_id}"
+      }
+    }
+  },
+
+  "taxCodeMapping": {
+    "description": "Map Lago tax codes to QuickBooks Tax Code IDs",
+    "comment": "Add your specific tax code mappings here",
+    "mappings": {
+      "french_standard_vat": {
+        "qbTaxCodeId": "TAX",
+        "qbTaxRateId": "1"
+      },
+      "us_sales_tax": {
+        "qbTaxCodeId": "TAX",
+        "qbTaxRateId": "2"
+      },
+      "exempt": {
+        "qbTaxCodeId": "NON",
+        "qbTaxRateId": null
+      }
+    },
+    "default": {
+      "qbTaxCodeId": "TAX",
+      "qbTaxRateId": "1"
+    }
+  },
+
+  "itemMapping": {
+    "description": "Map Lago item codes to QuickBooks Item IDs",
+    "comment": "Add your specific item mappings here",
+    "mappings": {
+      "startup": {
+        "qbItemId": "1",
+        "qbItemName": "Startup Plan"
+      },
+      "premium": {
+        "qbItemId": "2",
+        "qbItemName": "Premium Plan"
+      },
+      "enterprise": {
+        "qbItemId": "3",
+        "qbItemName": "Enterprise Plan"
+      }
+    },
+    "default": {
+      "qbItemId": "1",
+      "qbItemName": "Services"
+    }
+  },
+
+  "accountMapping": {
+    "description": "QuickBooks account IDs for various transaction types",
+    "income": {
+      "default": {
+        "comment": "Default income account for invoice line items",
+        "envVar": "QB_DEFAULT_INCOME_ACCOUNT_ID"
+      }
+    },
+    "discount": {
+      "default": {
+        "comment": "Account for discounts/coupons",
+        "envVar": "QB_DISCOUNT_ACCOUNT_ID"
+      }
+    },
+    "tax": {
+      "default": {
+        "comment": "Tax liability account",
+        "envVar": "QB_TAX_ACCOUNT_ID"
+      }
+    }
+  },
+
+  "transforms": {
+    "cents_to_dollars": {
+      "description": "Convert cents to dollars",
+      "formula": "value / 100",
+      "precision": 2
+    },
+    "first_non_empty": {
+      "description": "Return the first non-empty value from an array of sources"
+    }
+  }
+}
