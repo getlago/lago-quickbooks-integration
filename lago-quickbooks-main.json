@@ -86,7 +86,7 @@
                 "conditions": [
                   {
                     "leftValue": "={{ $json.webhook_type }}",
-                    "rightValue": "invoice.generated",
+                    "rightValue": "invoice.created",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
@@ -96,7 +96,29 @@
                 "combinator": "and"
               },
               "renameOutput": true,
-              "outputKey": "invoice_generated"
+              "outputKey": "invoice_created"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.webhook_type }}",
+                    "rightValue": "invoice.one_off_created",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "invoice_one_off_created"
             },
             {
               "conditions": {
@@ -130,7 +152,7 @@
                 "conditions": [
                   {
                     "leftValue": "={{ $json.webhook_type }}",
-                    "rightValue": "credit_note.generated",
+                    "rightValue": "credit_note.created",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
@@ -546,6 +568,13 @@
         [
           {
             "node": "Transform Customer Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Transform Invoice",
             "type": "main",
             "index": 0
           }
