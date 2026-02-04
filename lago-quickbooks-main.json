@@ -5,7 +5,8 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "lago-webhook",
-        "responseMode": "responseNode",
+        "responseMode": "onReceived",
+        "responseCode": 200,
         "options": {
           "rawBody": true
         }
@@ -200,7 +201,13 @@
         "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/query?query=SELECT * FROM Customer WHERE DisplayName = '{{ $json.qbCustomer.DisplayName }}'",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "quickBooksOAuth2Api",
-        "options": {}
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
       },
       "id": "lookup-customer",
       "name": "Lookup Customer in QB",
@@ -216,7 +223,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const inputData = $('Transform Customer Create').first()?.json || $('Transform Customer Update').first()?.json;\nconst queryResponse = $input.first().json;\nconst CONFIG = inputData._config;\n\nconst existingCustomers = queryResponse?.QueryResponse?.Customer || [];\nconst customerExists = existingCustomers.length > 0;\n\nlet qbCustomer = { ...inputData.qbCustomer };\nif (customerExists) {\n  qbCustomer.Id = existingCustomers[0].Id;\n  qbCustomer.SyncToken = existingCustomers[0].SyncToken;\n  qbCustomer.sparse = true;\n}\n\nreturn [{ json: { qbCustomer, customerExists, lagoCustomerId: inputData.lagoCustomerId, _config: CONFIG } }];"
+        "jsCode": "let inputData;\ntry {\n  inputData = $('Transform Customer Create').first()?.json;\n} catch (e) {\n  // Node not executed in this run\n}\nif (!inputData) {\n  try {\n    inputData = $('Transform Customer Update').first()?.json;\n  } catch (e) {\n    // Node not executed in this run\n  }\n}\nif (!inputData) {\n  throw new Error('Neither Transform Customer Create nor Transform Customer Update was executed');\n}\n\nconst queryResponse = $input.first().json;\nconst CONFIG = inputData._config;\n\nconst existingCustomers = queryResponse?.QueryResponse?.Customer || [];\nconst customerExists = existingCustomers.length > 0;\n\nlet qbCustomer = { ...inputData.qbCustomer };\nif (customerExists) {\n  qbCustomer.Id = existingCustomers[0].Id;\n  qbCustomer.SyncToken = existingCustomers[0].SyncToken;\n  qbCustomer.sparse = true;\n}\n\nreturn [{ json: { qbCustomer, customerExists, lagoCustomerId: inputData.lagoCustomerId, _config: CONFIG } }];"
       },
       "id": "prepare-customer-upsert",
       "name": "Prepare Customer Upsert",
@@ -246,7 +253,13 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.qbCustomer) }}",
-        "options": {}
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
       },
       "id": "upsert-customer",
       "name": "Create Update Customer QB",
@@ -276,7 +289,13 @@
         "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/query?query=SELECT * FROM Customer WHERE DisplayName = '{{ $json.qbCustomer.DisplayName }}'",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "quickBooksOAuth2Api",
-        "options": {}
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
       },
       "id": "lookup-customer-for-invoice",
       "name": "Lookup Customer for Invoice",
@@ -322,7 +341,13 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.qbInvoice) }}",
-        "options": {}
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
       },
       "id": "create-invoice",
       "name": "Create Invoice in QB",
@@ -352,7 +377,13 @@
         "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/query?query=SELECT * FROM Customer WHERE DisplayName = '{{ $json.qbCustomer.DisplayName }}'",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "quickBooksOAuth2Api",
-        "options": {}
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
       },
       "id": "lookup-customer-for-credit-note",
       "name": "Lookup Customer for CN",
@@ -394,7 +425,13 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.qbCreditMemo) }}",
-        "options": {}
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
       },
       "id": "create-credit-memo",
       "name": "Create Credit Memo QB",
@@ -424,7 +461,13 @@
         "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/query?query=SELECT * FROM Invoice WHERE DocNumber = '{{ $json.lagoInvoiceNumber }}'",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "quickBooksOAuth2Api",
-        "options": {}
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
       },
       "id": "lookup-invoice-for-payment",
       "name": "Lookup Invoice for Payment",
@@ -494,7 +537,13 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.qbPayment) }}",
-        "options": {}
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
       },
       "id": "create-payment",
       "name": "Create Payment in QB",
@@ -517,22 +566,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1500, 800]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ success: true, message: 'Webhook processed', timestamp: new Date().toISOString() }) }}",
-        "options": {
-          "responseCode": 200
-        }
-      },
-      "id": "respond-success",
-      "name": "Respond Success",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [1900, 400]
-    }
-  ],
+    }  ],
   "connections": {
     "Lago Webhook Receiver": {
       "main": [
@@ -646,18 +680,7 @@
         ]
       ]
     },
-    "Create Update Customer QB": {
-      "main": [
-        [
-          {
-            "node": "Respond Success",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Transform Invoice": {
+        "Transform Invoice": {
       "main": [
         [
           {
@@ -690,18 +713,7 @@
         ]
       ]
     },
-    "Create Invoice in QB": {
-      "main": [
-        [
-          {
-            "node": "Respond Success",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Transform Credit Note": {
+        "Transform Credit Note": {
       "main": [
         [
           {
@@ -734,18 +746,7 @@
         ]
       ]
     },
-    "Create Credit Memo QB": {
-      "main": [
-        [
-          {
-            "node": "Respond Success",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Extract Payment Info": {
+        "Extract Payment Info": {
       "main": [
         [
           {
@@ -790,28 +791,6 @@
         [
           {
             "node": "Create Payment in QB",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Create Payment in QB": {
-      "main": [
-        [
-          {
-            "node": "Respond Success",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Log Payment Status": {
-      "main": [
-        [
-          {
-            "node": "Respond Success",
             "type": "main",
             "index": 0
           }
