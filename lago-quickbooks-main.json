@@ -223,7 +223,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const inputData = $('Transform Customer Create').first()?.json || $('Transform Customer Update').first()?.json;\nconst queryResponse = $input.first().json;\nconst CONFIG = inputData._config;\n\nconst existingCustomers = queryResponse?.QueryResponse?.Customer || [];\nconst customerExists = existingCustomers.length > 0;\n\nlet qbCustomer = { ...inputData.qbCustomer };\nif (customerExists) {\n  qbCustomer.Id = existingCustomers[0].Id;\n  qbCustomer.SyncToken = existingCustomers[0].SyncToken;\n  qbCustomer.sparse = true;\n}\n\nreturn [{ json: { qbCustomer, customerExists, lagoCustomerId: inputData.lagoCustomerId, _config: CONFIG } }];"
+        "jsCode": "let inputData;\ntry {\n  inputData = $('Transform Customer Create').first()?.json;\n} catch (e) {\n  // Node not executed in this run\n}\nif (!inputData) {\n  try {\n    inputData = $('Transform Customer Update').first()?.json;\n  } catch (e) {\n    // Node not executed in this run\n  }\n}\nif (!inputData) {\n  throw new Error('Neither Transform Customer Create nor Transform Customer Update was executed');\n}\n\nconst queryResponse = $input.first().json;\nconst CONFIG = inputData._config;\n\nconst existingCustomers = queryResponse?.QueryResponse?.Customer || [];\nconst customerExists = existingCustomers.length > 0;\n\nlet qbCustomer = { ...inputData.qbCustomer };\nif (customerExists) {\n  qbCustomer.Id = existingCustomers[0].Id;\n  qbCustomer.SyncToken = existingCustomers[0].SyncToken;\n  qbCustomer.sparse = true;\n}\n\nreturn [{ json: { qbCustomer, customerExists, lagoCustomerId: inputData.lagoCustomerId, _config: CONFIG } }];"
       },
       "id": "prepare-customer-upsert",
       "name": "Prepare Customer Upsert",
