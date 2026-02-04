@@ -5,7 +5,8 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "lago-webhook",
-        "responseMode": "responseNode",
+        "responseMode": "onReceived",
+        "responseCode": 200,
         "options": {
           "rawBody": true
         }
@@ -200,7 +201,13 @@
         "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/query?query=SELECT * FROM Customer WHERE DisplayName = '{{ $json.qbCustomer.DisplayName }}'",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "quickBooksOAuth2Api",
-        "options": {}
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
       },
       "id": "lookup-customer",
       "name": "Lookup Customer in QB",
@@ -246,7 +253,13 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.qbCustomer) }}",
-        "options": {}
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
       },
       "id": "upsert-customer",
       "name": "Create Update Customer QB",
@@ -276,7 +289,13 @@
         "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/query?query=SELECT * FROM Customer WHERE DisplayName = '{{ $json.qbCustomer.DisplayName }}'",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "quickBooksOAuth2Api",
-        "options": {}
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
       },
       "id": "lookup-customer-for-invoice",
       "name": "Lookup Customer for Invoice",
@@ -322,7 +341,13 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.qbInvoice) }}",
-        "options": {}
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
       },
       "id": "create-invoice",
       "name": "Create Invoice in QB",
@@ -352,7 +377,13 @@
         "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/query?query=SELECT * FROM Customer WHERE DisplayName = '{{ $json.qbCustomer.DisplayName }}'",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "quickBooksOAuth2Api",
-        "options": {}
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
       },
       "id": "lookup-customer-for-credit-note",
       "name": "Lookup Customer for CN",
@@ -394,7 +425,13 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.qbCreditMemo) }}",
-        "options": {}
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
       },
       "id": "create-credit-memo",
       "name": "Create Credit Memo QB",
@@ -424,7 +461,13 @@
         "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/query?query=SELECT * FROM Invoice WHERE DocNumber = '{{ $json.lagoInvoiceNumber }}'",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "quickBooksOAuth2Api",
-        "options": {}
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
       },
       "id": "lookup-invoice-for-payment",
       "name": "Lookup Invoice for Payment",
@@ -494,7 +537,13 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.qbPayment) }}",
-        "options": {}
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
       },
       "id": "create-payment",
       "name": "Create Payment in QB",
