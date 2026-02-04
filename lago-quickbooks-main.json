@@ -566,22 +566,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1500, 800]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ success: true, message: 'Webhook processed', timestamp: new Date().toISOString() }) }}",
-        "options": {
-          "responseCode": 200
-        }
-      },
-      "id": "respond-success",
-      "name": "Respond Success",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [1900, 400]
-    }
-  ],
+    }  ],
   "connections": {
     "Lago Webhook Receiver": {
       "main": [
@@ -695,18 +680,7 @@
         ]
       ]
     },
-    "Create Update Customer QB": {
-      "main": [
-        [
-          {
-            "node": "Respond Success",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Transform Invoice": {
+        "Transform Invoice": {
       "main": [
         [
           {
@@ -739,18 +713,7 @@
         ]
       ]
     },
-    "Create Invoice in QB": {
-      "main": [
-        [
-          {
-            "node": "Respond Success",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Transform Credit Note": {
+        "Transform Credit Note": {
       "main": [
         [
           {
@@ -783,18 +746,7 @@
         ]
       ]
     },
-    "Create Credit Memo QB": {
-      "main": [
-        [
-          {
-            "node": "Respond Success",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Extract Payment Info": {
+        "Extract Payment Info": {
       "main": [
         [
           {
@@ -839,28 +791,6 @@
         [
           {
             "node": "Create Payment in QB",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Create Payment in QB": {
-      "main": [
-        [
-          {
-            "node": "Respond Success",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Log Payment Status": {
-      "main": [
-        [
-          {
-            "node": "Respond Success",
             "type": "main",
             "index": 0
           }
