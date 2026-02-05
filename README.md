@@ -310,6 +310,76 @@ After processing, verify in QuickBooks:
 - [ ] Set up monitoring/alerting
 - [ ] Test with real Lago webhooks
 - [ ] Enable workflow execution logging
+- [ ] Configure concurrency limits for high volume (see below)
+
+## High Volume Configuration
+
+For handling large invoice volumes (e.g., 10,000+ invoices/day), configure N8N's native concurrency control.
+
+### QuickBooks API Rate Limits
+
+| Limit | Value |
+|-------|-------|
+| Standard endpoints | 500 requests/minute |
+| Concurrent requests | 10 max |
+| Per-second limit | 10 requests/second |
+
+### Required Environment Variable
+
+Set this environment variable on your N8N instance:
+
+```bash
+N8N_CONCURRENCY_PRODUCTION_LIMIT=10
+```
+
+This limits concurrent webhook executions to 10, matching QuickBooks' concurrent request limit. Excess webhooks are queued in memory (FIFO order) and processed as capacity frees up.
+
+### How It Works
+
+```
+Webhook burst arrives (e.g., 10,000 in 5 minutes)
+        │
+        ▼
+N8N accepts all webhooks, responds 200 immediately
+        │
+        ▼
+10 execute concurrently, rest queue in memory
+        │
+        ▼
+Built-in Wait nodes (1s each) pace API calls
+        │
+        ▼
+Queue drains at ~100 invoices/minute
+        │
+        ▼
+10,000 invoices processed in ~100 minutes
+```
+
+### Throughput Estimates
+
+| Concurrency Limit | Wait Time | Throughput | 10k Invoices |
+|-------------------|-----------|------------|--------------|
+| 10 | 1s between calls | ~100/min | ~100 minutes |
+| 5 | 1s between calls | ~50/min | ~200 minutes |
+
+### Why Lookup-First is Required
+
+The workflow uses a lookup-first approach to prevent duplicates:
+
+1. **Query QB** for existing invoice by DocNumber
+2. **Skip** if found, **Create** if not found
+
+**Why not optimistic creates?** QuickBooks does NOT enforce unique `DocNumber` values. If you skip the lookup and just try to create, QB will happily create duplicate invoices with the same DocNumber. The lookup step is essential.
+
+### Important Notes
+
+1. **Memory Queue**: Webhooks queue in N8N's memory. If N8N restarts, queued webhooks are lost. Consider using Lago's webhook retry mechanism for resilience.
+
+2. **No Redis Required**: This solution uses N8N's built-in concurrency control, not queue mode (which requires Redis).
+
+3. **Wait Nodes**: The workflow includes Wait nodes (1 second) after each QuickBooks API call to prevent rate limit errors.
+
+4. **Monitoring**: Monitor N8N's execution queue depth via the UI or API to ensure the queue isn't growing unbounded.
 
 ## Troubleshooting
 
