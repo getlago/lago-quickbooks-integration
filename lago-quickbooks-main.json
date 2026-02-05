@@ -20,7 +20,17 @@
     },
     {
       "parameters": {
-        "jsCode": "/*\n * ========================================\n * CONFIGURATION - Edit these values\n * ========================================\n */\nconst CONFIG = {\n  // Lago Settings\n  LAGO_WEBHOOK_SECRET: 'your_lago_webhook_secret_here',\n  BYPASS_SIGNATURE: true,  // Set to false in production\n  \n  // QuickBooks Settings\n  QB_ENVIRONMENT: 'sandbox',  // 'sandbox' or 'production'\n  QB_REALM_ID: 'your_quickbooks_company_id',\n  QB_DEFAULT_ITEM_ID: '1',\n  QB_DISCOUNT_ACCOUNT_ID: '1'\n};\n/* ======================================== */\n\nconst item = $input.first();\nconst body = item.json.body || item.json;\nconst headers = item.json.headers || {};\n\nif (!CONFIG.BYPASS_SIGNATURE) {\n  const crypto = require('crypto');\n  const signature = headers['x-lago-signature'] || headers['X-Lago-Signature'] || '';\n  const expectedSignature = crypto\n    .createHmac('sha256', CONFIG.LAGO_WEBHOOK_SECRET)\n    .update(JSON.stringify(body))\n    .digest('hex');\n  if (signature !== expectedSignature) {\n    throw new Error('Invalid webhook signature');\n  }\n}\n\n// Return the webhook payload with config\nreturn [{\n  json: {\n    ...body,\n    _config: CONFIG,\n    _verified: true,\n    _receivedAt: new Date().toISOString()\n  }\n}];"
+        "jsCode": "/*\n * ========================================\n * ITEM MAPPINGS - Lago to QuickBooks\n * ========================================\n * Configure mappings between Lago codes and QuickBooks IDs.\n * This node is referenced by invoice and credit note processing.\n *\n * To add a new mapping, add a line: 'lago_code': 'qb_id'\n */\n\nconst MAPPINGS = {\n  /*\n   * ITEM MAPPINGS\n   * Map Lago fees.item.code to QuickBooks Item IDs\n   */\n  ITEM_MAPPINGS: {\n    // 'startup': '1',\n    // 'premium': '2',\n    // 'api_calls': '3',\n  },\n  ITEM_FALLBACK_ID: '1',  // Used when no mapping found\n\n  /*\n   * TAX MAPPINGS\n   * Map Lago applied_taxes.tax_code to QuickBooks TaxCode refs\n   * Common QB values: 'TAX' (taxable), 'NON' (non-taxable)\n   */\n  TAX_MAPPINGS: {\n    // 'french_standard_vat': 'TAX',\n    // 'us_sales_tax': 'TAX',\n    // 'tax_exempt': 'NON',\n  },\n  TAX_FALLBACK_REF: 'NON',  // Used when no mapping found\n\n  /*\n   * DISCOUNT MAPPINGS\n   * Map Lago credits.item.code to QuickBooks Discount Account IDs\n   */\n  DISCOUNT_MAPPINGS: {\n    // 'startup_deal': '1',\n    // 'loyalty_discount': '2',\n  },\n  DISCOUNT_FALLBACK_ACCOUNT_ID: '1'  // Used when no mapping found\n};\n\n// Pass through the input data and add mappings to _config\nconst input = $input.first().json;\ninput._config._mappings = MAPPINGS;\nreturn [{ json: input }];"
+      },
+      "id": "item-mappings-config",
+      "name": "Item Mappings Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [550, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "/*\n * ========================================\n * CONFIGURATION - Edit these values\n * ========================================\n */\nconst CONFIG = {\n  // Lago Settings\n  LAGO_WEBHOOK_SECRET: 'your_lago_webhook_secret_here',\n  BYPASS_SIGNATURE: true,  // Set to false in production\n  \n  // QuickBooks Settings\n  QB_ENVIRONMENT: 'sandbox',  // 'sandbox' or 'production'\n  QB_REALM_ID: 'your_quickbooks_company_id',\n  QB_DEFAULT_ITEM_ID: '1',\n  QB_TAX_CODE_ID: '',   // Tax Code ID (TxnTaxCodeRef) - find via: SELECT * FROM TaxCode\n  QB_TAX_RATE_ID: '',   // Tax Rate ID (TaxRateRef) - find via: SELECT * FROM TaxRate\n  QB_DISCOUNT_ACCOUNT_ID: '1'\n};\n/* ======================================== */\n\nconst item = $input.first();\nconst body = item.json.body || item.json;\nconst headers = item.json.headers || {};\n\nif (!CONFIG.BYPASS_SIGNATURE) {\n  const crypto = require('crypto');\n  const signature = headers['x-lago-signature'] || headers['X-Lago-Signature'] || '';\n  const expectedSignature = crypto\n    .createHmac('sha256', CONFIG.LAGO_WEBHOOK_SECRET)\n    .update(JSON.stringify(body))\n    .digest('hex');\n  if (signature !== expectedSignature) {\n    throw new Error('Invalid webhook signature');\n  }\n}\n\n// Return the webhook payload with config\nreturn [{\n  json: {\n    ...body,\n    _config: CONFIG,\n    _verified: true,\n    _receivedAt: new Date().toISOString()\n  }\n}];"
       },
       "id": "verify-signature",
       "name": "Verify HMAC Signature",
@@ -275,13 +285,23 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.first().json;\nconst CONFIG = input._config;\nconst lagoInvoice = input.invoice;\nconst lagoCustomer = lagoInvoice.customer;\n\nconst centsToDollars = (cents) => Number((cents / 100).toFixed(2));\n\n// Compute customer DisplayName for lookup\nconst customerDisplayName = (lagoCustomer.name || [lagoCustomer.firstname, lagoCustomer.lastname].filter(Boolean).join(' ') || lagoCustomer.legal_name || lagoCustomer.external_id).substring(0, 100);\n\nconst lineItems = [];\nlet lineNum = 1;\n\nif (lagoInvoice.fees && lagoInvoice.fees.length > 0) {\n  for (const fee of lagoInvoice.fees) {\n    const description = fee.item?.invoice_display_name || fee.item?.name || fee.description || 'Fee';\n    lineItems.push({\n      LineNum: lineNum++,\n      Amount: centsToDollars(fee.amount_cents),\n      DetailType: 'SalesItemLineDetail',\n      Description: description.substring(0, 4000),\n      SalesItemLineDetail: {\n        Qty: parseFloat(fee.units) || 1,\n        UnitPrice: parseFloat(fee.precise_unit_amount) || centsToDollars(fee.amount_cents),\n        ItemRef: { value: CONFIG.QB_DEFAULT_ITEM_ID, name: 'Services' },\n        TaxCodeRef: { value: fee.taxes_rate > 0 ? 'TAX' : 'NON' }\n      }\n    });\n  }\n}\n\nif (lagoInvoice.credits && lagoInvoice.credits.length > 0) {\n  for (const credit of lagoInvoice.credits) {\n    lineItems.push({\n      LineNum: lineNum++,\n      Amount: centsToDollars(credit.amount_cents),\n      DetailType: 'DiscountLineDetail',\n      Description: credit.item?.name || 'Credit',\n      DiscountLineDetail: { PercentBased: false, DiscountAccountRef: { value: CONFIG.QB_DISCOUNT_ACCOUNT_ID } }\n    });\n  }\n}\n\nconst qbInvoice = {\n  CustomerRef: { value: 'PLACEHOLDER' },\n  DocNumber: lagoInvoice.number,\n  TxnDate: lagoInvoice.issuing_date,\n  DueDate: lagoInvoice.payment_due_date,\n  CurrencyRef: { value: lagoInvoice.currency },\n  Line: lineItems,\n  PrivateNote: `Lago Invoice: ${lagoInvoice.lago_id}`,\n  CustomerMemo: { value: `Invoice ${lagoInvoice.number}` }\n};\n\nif (lagoCustomer.email) qbInvoice.BillEmail = { Address: lagoCustomer.email };\n\nreturn [{ json: { qbInvoice, qbCustomer: { DisplayName: customerDisplayName }, lagoInvoiceId: lagoInvoice.lago_id, lagoInvoiceNumber: lagoInvoice.number, lagoCustomerId: lagoCustomer.lago_id, _config: CONFIG } }];"
+        "jsCode": "const input = $input.first().json;\nconst CONFIG = input._config;\nconst lagoInvoice = input.invoice;\nconst lagoCustomer = lagoInvoice.customer;\n\nconst centsToDollars = (cents) => Number((cents / 100).toFixed(2));\n\n// Compute customer DisplayName for lookup\nconst customerDisplayName = (lagoCustomer.name || [lagoCustomer.firstname, lagoCustomer.lastname].filter(Boolean).join(' ') || lagoCustomer.legal_name || lagoCustomer.external_id).substring(0, 100);\n\nconst lineItems = [];\nlet lineNum = 1;\nlet totalTaxableAmount = 0;\n\nif (lagoInvoice.fees && lagoInvoice.fees.length > 0) {\n  for (const fee of lagoInvoice.fees) {\n    const description = fee.item?.invoice_display_name || fee.item?.name || fee.description || 'Fee';\n    const feeTaxCode = fee.applied_taxes?.[0]?.tax_code || null;\n    const hasTax = fee.taxes_rate > 0;\n    const feeAmount = centsToDollars(fee.amount_cents);\n    \n    if (hasTax) totalTaxableAmount += feeAmount;\n    \n    lineItems.push({\n      LineNum: lineNum++,\n      Amount: feeAmount,\n      DetailType: 'SalesItemLineDetail',\n      Description: description.substring(0, 4000),\n      SalesItemLineDetail: {\n        Qty: parseFloat(fee.units) || 1,\n        UnitPrice: parseFloat(fee.precise_unit_amount) || feeAmount,\n        ItemRef: { value: CONFIG.QB_DEFAULT_ITEM_ID, name: 'Services' },\n        TaxCodeRef: { value: hasTax ? 'TAX' : 'NON' }\n      },\n      _lagoItemCode: fee.item?.code || null,\n      _lagoTaxCode: feeTaxCode,\n      _lagoTaxRate: fee.taxes_rate || 0\n    });\n  }\n}\n\nif (lagoInvoice.credits && lagoInvoice.credits.length > 0) {\n  for (const credit of lagoInvoice.credits) {\n    lineItems.push({\n      LineNum: lineNum++,\n      Amount: centsToDollars(credit.amount_cents),\n      DetailType: 'DiscountLineDetail',\n      Description: credit.item?.name || 'Credit',\n      DiscountLineDetail: { PercentBased: false, DiscountAccountRef: { value: CONFIG.QB_DISCOUNT_ACCOUNT_ID } },\n      _lagoDiscountCode: credit.item?.code || null\n    });\n  }\n}\n\nconst qbInvoice = {\n  CustomerRef: { value: 'PLACEHOLDER' },\n  DocNumber: lagoInvoice.number,\n  TxnDate: lagoInvoice.issuing_date,\n  DueDate: lagoInvoice.payment_due_date,\n  CurrencyRef: { value: lagoInvoice.currency },\n  Line: lineItems,\n  PrivateNote: `Lago Invoice: ${lagoInvoice.lago_id}`,\n  CustomerMemo: { value: `Invoice ${lagoInvoice.number}` }\n};\n\n// Manual tax override using TxnTaxDetail\nconst totalTaxAmountCents = lagoInvoice.taxes_amount_cents || 0;\nif (totalTaxAmountCents > 0 && CONFIG.QB_TAX_RATE_ID) {\n  // Get tax rate from first taxable fee\n  let taxPercent = 0;\n  for (const fee of (lagoInvoice.fees || [])) {\n    if (fee.taxes_rate > 0) {\n      taxPercent = fee.taxes_rate;\n      break;\n    }\n  }\n  \n  const lagoTaxAmount = centsToDollars(totalTaxAmountCents);\n  \n  qbInvoice.TxnTaxDetail = {\n    TxnTaxCodeRef: { value: CONFIG.QB_TAX_CODE_ID || '2' },\n    TotalTax: lagoTaxAmount,\n    TaxLine: [{\n      Amount: lagoTaxAmount,\n      DetailType: 'TaxLineDetail',\n      TaxLineDetail: {\n        TaxRateRef: { value: CONFIG.QB_TAX_RATE_ID },\n        PercentBased: false,\n        NetAmountTaxable: totalTaxableAmount,\n        TaxPercent: taxPercent,\n        OverrideDeltaAmount: lagoTaxAmount\n      }\n    }]\n  };\n}\n\nif (lagoCustomer.email) qbInvoice.BillEmail = { Address: lagoCustomer.email };\n\nreturn [{ json: { qbInvoice, qbCustomer: { DisplayName: customerDisplayName }, lagoInvoiceId: lagoInvoice.lago_id, lagoInvoiceNumber: lagoInvoice.number, lagoCustomerId: lagoCustomer.lago_id, lagoCustomer: lagoCustomer, _config: CONFIG } }];"
       },
       "id": "transform-invoice",
       "name": "Transform Invoice",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "/*\n * Map Lago Items to QuickBooks Items\n * This node resolves Lago item codes, tax codes, and discount codes\n * to their QuickBooks equivalents using the configured mappings.\n */\nconst input = $input.first().json;\nconst MAPPINGS = input._config._mappings;\nconst qbInvoice = input.qbInvoice;\n\n// Helper function to get mapped value with fallback\nconst getMapping = (mappings, key, fallback) => {\n  if (!key) return fallback;\n  return mappings[key] || fallback;\n};\n\n// Process line items and apply mappings\nconst mappedLines = qbInvoice.Line.map(line => {\n  const mappedLine = { ...line };\n  \n  if (line.DetailType === 'SalesItemLineDetail' && line.SalesItemLineDetail) {\n    const itemCode = line._lagoItemCode;\n    const taxRate = line._lagoTaxRate || 0;\n    \n    mappedLine.SalesItemLineDetail = {\n      ...line.SalesItemLineDetail,\n      ItemRef: {\n        value: getMapping(MAPPINGS.ITEM_MAPPINGS, itemCode, MAPPINGS.ITEM_FALLBACK_ID),\n        name: 'Services'\n      },\n      TaxCodeRef: { value: taxRate > 0 ? 'TAX' : 'NON' }\n    };\n    \n    // Clean up temporary fields\n    delete mappedLine._lagoItemCode;\n    delete mappedLine._lagoTaxCode;\n    delete mappedLine._lagoTaxRate;\n  }\n  \n  if (line.DetailType === 'DiscountLineDetail' && line.DiscountLineDetail) {\n    const discountCode = line._lagoDiscountCode;\n    \n    mappedLine.DiscountLineDetail = {\n      ...line.DiscountLineDetail,\n      DiscountAccountRef: {\n        value: getMapping(MAPPINGS.DISCOUNT_MAPPINGS, discountCode, MAPPINGS.DISCOUNT_FALLBACK_ACCOUNT_ID)\n      }\n    };\n    \n    delete mappedLine._lagoDiscountCode;\n  }\n  \n  return mappedLine;\n});\n\nconst mappedInvoice = {\n  ...qbInvoice,\n  Line: mappedLines\n};\n\nreturn [{\n  json: {\n    qbInvoice: mappedInvoice,\n    qbCustomer: input.qbCustomer,\n    lagoInvoiceId: input.lagoInvoiceId,\n    lagoInvoiceNumber: input.lagoInvoiceNumber,\n    lagoCustomerId: input.lagoCustomerId,\n    lagoCustomer: input.lagoCustomer,\n    _config: input._config\n  }\n}];"
+      },
+      "id": "map-lago-items",
+      "name": "Map Lago Items to QB",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 400]
     },
     {
       "parameters": {
@@ -301,7 +321,7 @@
       "name": "Lookup Customer for Invoice",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1100, 400],
+      "position": [1300, 400],
       "credentials": {
         "quickBooksOAuth2Api": {
           "id": "quickbooks-oauth2",
@@ -311,18 +331,46 @@
     },
     {
       "parameters": {
-        "jsCode": "const invoiceData = $('Transform Invoice').first().json;\nconst customerQuery = $input.first().json;\nconst CONFIG = invoiceData._config;\n\nconst existingCustomers = customerQuery?.QueryResponse?.Customer || [];\nif (existingCustomers.length === 0) throw new Error(`Customer not found for Lago ID: ${invoiceData.lagoCustomerId}`);\n\nconst customerId = existingCustomers[0].Id;\nlet qbInvoice = { ...invoiceData.qbInvoice };\nqbInvoice.CustomerRef = { value: customerId };\n\nreturn [{ json: { qbInvoice, qbCustomerId: customerId, lagoInvoiceId: invoiceData.lagoInvoiceId, lagoInvoiceNumber: invoiceData.lagoInvoiceNumber, _config: CONFIG } }];"
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "customer-exists",
+              "leftValue": "={{ $json.QueryResponse?.Customer?.length > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
       },
-      "id": "finalize-invoice",
-      "name": "Finalize Invoice",
+      "id": "customer-exists-check",
+      "name": "Customer Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1500, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "/*\n * Prepare customer data for creation in QuickBooks\n * This runs when customer doesn't exist and needs to be created\n */\nconst invoiceData = $('Map Lago Items to QB').first().json;\nconst CONFIG = invoiceData._config;\n\n// Get customer data from the invoice flow\nconst lagoCustomer = invoiceData.lagoCustomer;\n\nconst displayName = (lagoCustomer.name || \n  [lagoCustomer.firstname, lagoCustomer.lastname].filter(Boolean).join(' ') || \n  lagoCustomer.legal_name || \n  lagoCustomer.external_id).substring(0, 100);\n\nconst qbCustomer = {\n  DisplayName: displayName,\n  CompanyName: lagoCustomer.legal_name || lagoCustomer.name || undefined,\n  GivenName: lagoCustomer.firstname || undefined,\n  FamilyName: lagoCustomer.lastname || undefined,\n  PrimaryEmailAddr: lagoCustomer.email ? { Address: lagoCustomer.email } : undefined,\n  PrimaryPhone: lagoCustomer.phone ? { FreeFormNumber: lagoCustomer.phone } : undefined,\n  BillAddr: {\n    Line1: lagoCustomer.address_line1 || undefined,\n    Line2: lagoCustomer.address_line2 || undefined,\n    City: lagoCustomer.city || undefined,\n    CountrySubDivisionCode: lagoCustomer.state || undefined,\n    PostalCode: lagoCustomer.zipcode || undefined,\n    Country: lagoCustomer.country || undefined\n  },\n  CurrencyRef: lagoCustomer.currency ? { value: lagoCustomer.currency } : undefined,\n  Notes: `Lago ID: ${lagoCustomer.lago_id}\\nExternal ID: ${lagoCustomer.external_id}`\n};\n\n// Clean up undefined values\nconst cleanObject = (obj) => {\n  Object.keys(obj).forEach(key => {\n    if (obj[key] === undefined) delete obj[key];\n    else if (typeof obj[key] === 'object' && obj[key] !== null) {\n      cleanObject(obj[key]);\n      if (Object.keys(obj[key]).length === 0) delete obj[key];\n    }\n  });\n};\ncleanObject(qbCustomer);\n\nreturn [{ json: { qbCustomer, invoiceData, _config: CONFIG } }];"
+      },
+      "id": "prepare-customer-for-invoice",
+      "name": "Prepare Customer for Invoice",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1300, 400]
+      "position": [1700, 500]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/invoice",
+        "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/customer",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "quickBooksOAuth2Api",
         "sendHeaders": true,
@@ -340,7 +388,123 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.qbInvoice) }}",
+        "jsonBody": "={{ JSON.stringify($json.qbCustomer) }}",
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
+      },
+      "id": "create-customer-for-invoice",
+      "name": "Create Customer for Invoice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1900, 500],
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "quickbooks-oauth2",
+          "name": "QuickBooks OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/*\n * Finalize Invoice - handles both existing and newly created customers\n */\nconst invoiceData = $('Map Lago Items to QB').first().json;\nconst CONFIG = invoiceData._config;\n\nlet customerId;\n\n// Check if we came from the 'customer exists' branch or 'customer created' branch\ntry {\n  // Try to get customer from lookup (existing customer path)\n  const lookupResult = $('Lookup Customer for Invoice').first().json;\n  const existingCustomers = lookupResult?.QueryResponse?.Customer || [];\n  if (existingCustomers.length > 0) {\n    customerId = existingCustomers[0].Id;\n  }\n} catch (e) {\n  // Lookup not in this execution path\n}\n\nif (!customerId) {\n  // Try to get customer from create response (new customer path)\n  try {\n    const createResult = $('Create Customer for Invoice').first().json;\n    customerId = createResult?.Customer?.Id;\n  } catch (e) {\n    // Create not in this execution path\n  }\n}\n\nif (!customerId) {\n  throw new Error(`Could not determine customer ID for invoice ${invoiceData.lagoInvoiceNumber}`);\n}\n\nlet qbInvoice = { ...invoiceData.qbInvoice };\nqbInvoice.CustomerRef = { value: customerId };\n\nreturn [{ json: { qbInvoice, qbCustomerId: customerId, lagoInvoiceId: invoiceData.lagoInvoiceId, lagoInvoiceNumber: invoiceData.lagoInvoiceNumber, _config: CONFIG } }];"
+      },
+      "id": "finalize-invoice",
+      "name": "Finalize Invoice",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2100, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/query?query=SELECT * FROM Invoice WHERE DocNumber = '{{ $json.lagoInvoiceNumber }}'",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
+      },
+      "id": "lookup-invoice-before-create",
+      "name": "Lookup Invoice in QB",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2300, 400],
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "quickbooks-oauth2",
+          "name": "QuickBooks OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "invoice-exists",
+              "leftValue": "={{ $json.QueryResponse?.Invoice?.length > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "invoice-exists-check",
+      "name": "Invoice Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2500, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "/*\n * Skip duplicate invoice - invoice already exists in QuickBooks\n */\nconst invoiceData = $('Finalize Invoice').first().json;\nconst lookupResult = $input.first().json;\nconst existingInvoice = lookupResult?.QueryResponse?.Invoice?.[0];\n\nconsole.log(`Invoice ${invoiceData.lagoInvoiceNumber} already exists in QuickBooks as ID: ${existingInvoice?.Id}`);\n\nreturn [{\n  json: {\n    skipped: true,\n    reason: 'Invoice already exists in QuickBooks',\n    lagoInvoiceNumber: invoiceData.lagoInvoiceNumber,\n    lagoInvoiceId: invoiceData.lagoInvoiceId,\n    qbInvoiceId: existingInvoice?.Id,\n    qbDocNumber: existingInvoice?.DocNumber\n  }\n}];"
+      },
+      "id": "skip-duplicate-invoice",
+      "name": "Skip Duplicate Invoice",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2700, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://{{ $('Finalize Invoice').first().json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $('Finalize Invoice').first().json._config.QB_REALM_ID }}/invoice",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Finalize Invoice').first().json.qbInvoice) }}",
         "options": {
           "retry": {
             "maxTries": 5,
@@ -353,7 +517,7 @@
       "name": "Create Invoice in QB",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1500, 400],
+      "position": [2700, 500],
       "credentials": {
         "quickBooksOAuth2Api": {
           "id": "quickbooks-oauth2",
@@ -363,7 +527,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.first().json;\nconst CONFIG = input._config;\nconst lagoCreditNote = input.credit_note;\nconst lagoCustomer = lagoCreditNote.customer;\n\nconst centsToDollars = (cents) => Number((cents / 100).toFixed(2));\n\n// Compute customer DisplayName for lookup\nconst customerDisplayName = (lagoCustomer.name || [lagoCustomer.firstname, lagoCustomer.lastname].filter(Boolean).join(' ') || lagoCustomer.legal_name || lagoCustomer.external_id).substring(0, 100);\n\nconst lineItems = [];\nif (lagoCreditNote.items && lagoCreditNote.items.length > 0) {\n  let lineNum = 1;\n  for (const item of lagoCreditNote.items) {\n    lineItems.push({\n      LineNum: lineNum++,\n      Amount: centsToDollars(item.amount_cents),\n      DetailType: 'SalesItemLineDetail',\n      Description: item.fee?.item?.name || 'Credit Note Item',\n      SalesItemLineDetail: { Qty: 1, UnitPrice: centsToDollars(item.amount_cents), ItemRef: { value: CONFIG.QB_DEFAULT_ITEM_ID, name: 'Services' } }\n    });\n  }\n}\n\nif (lineItems.length === 0) {\n  lineItems.push({\n    LineNum: 1,\n    Amount: centsToDollars(lagoCreditNote.total_amount_cents || 0),\n    DetailType: 'SalesItemLineDetail',\n    Description: `Credit Note: ${lagoCreditNote.reason || 'Adjustment'}`,\n    SalesItemLineDetail: { Qty: 1, UnitPrice: centsToDollars(lagoCreditNote.total_amount_cents || 0), ItemRef: { value: CONFIG.QB_DEFAULT_ITEM_ID, name: 'Services' } }\n  });\n}\n\nconst qbCreditMemo = {\n  CustomerRef: { value: 'PLACEHOLDER' },\n  DocNumber: lagoCreditNote.number,\n  TxnDate: lagoCreditNote.issuing_date,\n  CurrencyRef: { value: lagoCreditNote.currency },\n  Line: lineItems,\n  PrivateNote: `Lago Credit Note: ${lagoCreditNote.lago_id}`,\n  CustomerMemo: { value: `Credit Note ${lagoCreditNote.number}` }\n};\n\nif (lagoCustomer.email) qbCreditMemo.BillEmail = { Address: lagoCustomer.email };\n\nreturn [{ json: { qbCreditMemo, qbCustomer: { DisplayName: customerDisplayName }, lagoCreditNoteId: lagoCreditNote.lago_id, lagoCreditNoteNumber: lagoCreditNote.number, lagoCustomerId: lagoCustomer.lago_id, _config: CONFIG } }];"
+        "jsCode": "const input = $input.first().json;\nconst CONFIG = input._config;\nconst lagoCreditNote = input.credit_note;\nconst lagoCustomer = lagoCreditNote.customer;\n\nconst centsToDollars = (cents) => Number((cents / 100).toFixed(2));\n\n// Compute customer DisplayName for lookup\nconst customerDisplayName = (lagoCustomer.name || [lagoCustomer.firstname, lagoCustomer.lastname].filter(Boolean).join(' ') || lagoCustomer.legal_name || lagoCustomer.external_id).substring(0, 100);\n\nconst lineItems = [];\nlet lineNum = 1;\nlet totalTaxableAmount = 0;\n\nif (lagoCreditNote.items && lagoCreditNote.items.length > 0) {\n  for (const item of lagoCreditNote.items) {\n    const description = item.fee?.item?.invoice_display_name || item.fee?.item?.name || 'Credit Note Item';\n    const hasTax = (item.fee?.taxes_rate || 0) > 0;\n    const itemAmount = centsToDollars(item.amount_cents);\n    \n    if (hasTax) totalTaxableAmount += itemAmount;\n    \n    lineItems.push({\n      LineNum: lineNum++,\n      Amount: itemAmount,\n      DetailType: 'SalesItemLineDetail',\n      Description: description.substring(0, 4000),\n      SalesItemLineDetail: {\n        Qty: 1,\n        UnitPrice: itemAmount,\n        ItemRef: { value: CONFIG.QB_DEFAULT_ITEM_ID, name: 'Services' },\n        TaxCodeRef: { value: hasTax ? 'TAX' : 'NON' }\n      },\n      _lagoItemCode: item.fee?.item?.code || null,\n      _lagoTaxRate: item.fee?.taxes_rate || 0\n    });\n  }\n}\n\nif (lineItems.length === 0) {\n  lineItems.push({\n    LineNum: 1,\n    Amount: centsToDollars(lagoCreditNote.total_amount_cents || 0),\n    DetailType: 'SalesItemLineDetail',\n    Description: `Credit Note: ${lagoCreditNote.reason || 'Adjustment'}`,\n    SalesItemLineDetail: {\n      Qty: 1,\n      UnitPrice: centsToDollars(lagoCreditNote.total_amount_cents || 0),\n      ItemRef: { value: CONFIG.QB_DEFAULT_ITEM_ID, name: 'Services' },\n      TaxCodeRef: { value: 'NON' }\n    }\n  });\n}\n\nconst qbCreditMemo = {\n  CustomerRef: { value: 'PLACEHOLDER' },\n  DocNumber: lagoCreditNote.number,\n  TxnDate: lagoCreditNote.issuing_date,\n  CurrencyRef: { value: lagoCreditNote.currency },\n  Line: lineItems,\n  PrivateNote: `Lago Credit Note: ${lagoCreditNote.lago_id}`,\n  CustomerMemo: { value: `Credit Note ${lagoCreditNote.number}` }\n};\n\n// Manual tax override using TxnTaxDetail (same as invoices)\nconst totalTaxAmountCents = lagoCreditNote.taxes_amount_cents || 0;\nif (totalTaxAmountCents > 0 && CONFIG.QB_TAX_RATE_ID) {\n  let taxPercent = 0;\n  for (const item of (lagoCreditNote.items || [])) {\n    if (item.fee?.taxes_rate > 0) {\n      taxPercent = item.fee.taxes_rate;\n      break;\n    }\n  }\n  \n  const lagoTaxAmount = centsToDollars(totalTaxAmountCents);\n  \n  qbCreditMemo.TxnTaxDetail = {\n    TxnTaxCodeRef: { value: CONFIG.QB_TAX_CODE_ID || '2' },\n    TotalTax: lagoTaxAmount,\n    TaxLine: [{\n      Amount: lagoTaxAmount,\n      DetailType: 'TaxLineDetail',\n      TaxLineDetail: {\n        TaxRateRef: { value: CONFIG.QB_TAX_RATE_ID },\n        PercentBased: false,\n        NetAmountTaxable: totalTaxableAmount,\n        TaxPercent: taxPercent,\n        OverrideDeltaAmount: lagoTaxAmount\n      }\n    }]\n  };\n}\n\nif (lagoCustomer.email) qbCreditMemo.BillEmail = { Address: lagoCustomer.email };\n\nreturn [{ json: { qbCreditMemo, qbCustomer: { DisplayName: customerDisplayName }, lagoCreditNoteId: lagoCreditNote.lago_id, lagoCreditNoteNumber: lagoCreditNote.number, lagoCustomerId: lagoCustomer.lago_id, lagoCustomer: lagoCustomer, _config: CONFIG } }];"
       },
       "id": "transform-credit-note",
       "name": "Transform Credit Note",
@@ -389,7 +553,7 @@
       "name": "Lookup Customer for CN",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1100, 550],
+      "position": [1300, 550],
       "credentials": {
         "quickBooksOAuth2Api": {
           "id": "quickbooks-oauth2",
@@ -399,18 +563,18 @@
     },
     {
       "parameters": {
-        "jsCode": "const creditNoteData = $('Transform Credit Note').first().json;\nconst customerQuery = $input.first().json;\nconst CONFIG = creditNoteData._config;\n\nconst existingCustomers = customerQuery?.QueryResponse?.Customer || [];\nif (existingCustomers.length === 0) throw new Error(`Customer not found for Lago ID: ${creditNoteData.lagoCustomerId}`);\n\nconst customerId = existingCustomers[0].Id;\nlet qbCreditMemo = { ...creditNoteData.qbCreditMemo };\nqbCreditMemo.CustomerRef = { value: customerId };\n\nreturn [{ json: { qbCreditMemo, qbCustomerId: customerId, lagoCreditNoteId: creditNoteData.lagoCreditNoteId, _config: CONFIG } }];"
+        "jsCode": "/*\n * Finalize Credit Note - handles both existing and newly created customers\n */\nconst cnData = $('Map CN Items to QB').first().json;\nconst CONFIG = cnData._config;\n\nlet customerId;\n\n// Check if we came from the 'customer exists' branch or 'customer created' branch\ntry {\n  const lookupResult = $('Lookup Customer for CN').first().json;\n  const existingCustomers = lookupResult?.QueryResponse?.Customer || [];\n  if (existingCustomers.length > 0) {\n    customerId = existingCustomers[0].Id;\n  }\n} catch (e) {\n  // Lookup not in this execution path\n}\n\nif (!customerId) {\n  try {\n    const createResult = $('Create Customer for CN').first().json;\n    customerId = createResult?.Customer?.Id;\n  } catch (e) {\n    // Create not in this execution path\n  }\n}\n\nif (!customerId) {\n  throw new Error(`Could not determine customer ID for credit note ${cnData.lagoCreditNoteNumber}`);\n}\n\nlet qbCreditMemo = { ...cnData.qbCreditMemo };\nqbCreditMemo.CustomerRef = { value: customerId };\n\nreturn [{ json: { qbCreditMemo, qbCustomerId: customerId, lagoCreditNoteId: cnData.lagoCreditNoteId, lagoCreditNoteNumber: cnData.lagoCreditNoteNumber, _config: CONFIG } }];"
       },
       "id": "finalize-credit-note",
       "name": "Finalize Credit Note",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1300, 550]
+      "position": [2100, 550]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/creditmemo",
+        "url": "=https://{{ $('Finalize Credit Note').first().json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $('Finalize Credit Note').first().json._config.QB_REALM_ID }}/creditmemo",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "quickBooksOAuth2Api",
         "sendHeaders": true,
@@ -419,12 +583,16 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
             }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.qbCreditMemo) }}",
+        "jsonBody": "={{ JSON.stringify($('Finalize Credit Note').first().json.qbCreditMemo) }}",
         "options": {
           "retry": {
             "maxTries": 5,
@@ -437,7 +605,7 @@
       "name": "Create Credit Memo QB",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1500, 550],
+      "position": [2700, 650],
       "credentials": {
         "quickBooksOAuth2Api": {
           "id": "quickbooks-oauth2",
@@ -566,6 +734,160 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1500, 800]
+    },
+    {
+      "parameters": {
+        "jsCode": "/*\n * Map Credit Note Items to QuickBooks Items\n * Same logic as invoice mapping\n */\nconst input = $input.first().json;\nconst MAPPINGS = input._config._mappings;\nconst qbCreditMemo = input.qbCreditMemo;\n\nconst getMapping = (mappings, key, fallback) => {\n  if (!key) return fallback;\n  return mappings[key] || fallback;\n};\n\nconst mappedLines = qbCreditMemo.Line.map(line => {\n  const mappedLine = { ...line };\n  \n  if (line.DetailType === 'SalesItemLineDetail' && line.SalesItemLineDetail) {\n    const itemCode = line._lagoItemCode;\n    const taxRate = line._lagoTaxRate || 0;\n    \n    mappedLine.SalesItemLineDetail = {\n      ...line.SalesItemLineDetail,\n      ItemRef: {\n        value: getMapping(MAPPINGS.ITEM_MAPPINGS, itemCode, MAPPINGS.ITEM_FALLBACK_ID),\n        name: 'Services'\n      },\n      TaxCodeRef: { value: taxRate > 0 ? 'TAX' : 'NON' }\n    };\n    \n    delete mappedLine._lagoItemCode;\n    delete mappedLine._lagoTaxRate;\n  }\n  \n  return mappedLine;\n});\n\nconst mappedCreditMemo = {\n  ...qbCreditMemo,\n  Line: mappedLines\n};\n\nreturn [{\n  json: {\n    qbCreditMemo: mappedCreditMemo,\n    qbCustomer: input.qbCustomer,\n    lagoCreditNoteId: input.lagoCreditNoteId,\n    lagoCreditNoteNumber: input.lagoCreditNoteNumber,\n    lagoCustomerId: input.lagoCustomerId,\n    lagoCustomer: input.lagoCustomer,\n    _config: input._config\n  }\n}];"
+      },
+      "id": "map-cn-items",
+      "name": "Map CN Items to QB",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 550]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cn-customer-exists",
+              "leftValue": "={{ $json.QueryResponse?.Customer?.length > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "cn-customer-exists-check",
+      "name": "CN Customer Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1500, 550]
+    },
+    {
+      "parameters": {
+        "jsCode": "/*\n * Prepare customer data for creation in QuickBooks (Credit Note flow)\n */\nconst cnData = $('Map CN Items to QB').first().json;\nconst CONFIG = cnData._config;\nconst lagoCustomer = cnData.lagoCustomer;\n\nconst displayName = (lagoCustomer.name || \n  [lagoCustomer.firstname, lagoCustomer.lastname].filter(Boolean).join(' ') || \n  lagoCustomer.legal_name || \n  lagoCustomer.external_id).substring(0, 100);\n\nconst qbCustomer = {\n  DisplayName: displayName,\n  CompanyName: lagoCustomer.legal_name || lagoCustomer.name || undefined,\n  GivenName: lagoCustomer.firstname || undefined,\n  FamilyName: lagoCustomer.lastname || undefined,\n  PrimaryEmailAddr: lagoCustomer.email ? { Address: lagoCustomer.email } : undefined,\n  PrimaryPhone: lagoCustomer.phone ? { FreeFormNumber: lagoCustomer.phone } : undefined,\n  BillAddr: {\n    Line1: lagoCustomer.address_line1 || undefined,\n    Line2: lagoCustomer.address_line2 || undefined,\n    City: lagoCustomer.city || undefined,\n    CountrySubDivisionCode: lagoCustomer.state || undefined,\n    PostalCode: lagoCustomer.zipcode || undefined,\n    Country: lagoCustomer.country || undefined\n  },\n  CurrencyRef: lagoCustomer.currency ? { value: lagoCustomer.currency } : undefined,\n  Notes: `Lago ID: ${lagoCustomer.lago_id}\\nExternal ID: ${lagoCustomer.external_id}`\n};\n\nconst cleanObject = (obj) => {\n  Object.keys(obj).forEach(key => {\n    if (obj[key] === undefined) delete obj[key];\n    else if (typeof obj[key] === 'object' && obj[key] !== null) {\n      cleanObject(obj[key]);\n      if (Object.keys(obj[key]).length === 0) delete obj[key];\n    }\n  });\n};\ncleanObject(qbCustomer);\n\nreturn [{ json: { qbCustomer, cnData, _config: CONFIG } }];"
+      },
+      "id": "prepare-customer-for-cn",
+      "name": "Prepare Customer for CN",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1700, 650]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/customer",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.qbCustomer) }}",
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
+      },
+      "id": "create-customer-for-cn",
+      "name": "Create Customer for CN",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1900, 650],
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "quickbooks-oauth2",
+          "name": "QuickBooks OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/query?query=SELECT * FROM CreditMemo WHERE DocNumber = '{{ $json.lagoCreditNoteNumber }}'",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
+      },
+      "id": "lookup-cn-before-create",
+      "name": "Lookup CN in QB",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2300, 550],
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "quickbooks-oauth2",
+          "name": "QuickBooks OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cn-exists",
+              "leftValue": "={{ $json.QueryResponse?.CreditMemo?.length > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "cn-exists-check",
+      "name": "CN Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2500, 550]
+    },
+    {
+      "parameters": {
+        "jsCode": "/*\n * Skip duplicate credit note - already exists in QuickBooks\n */\nconst cnData = $('Finalize Credit Note').first().json;\nconst lookupResult = $input.first().json;\nconst existingCN = lookupResult?.QueryResponse?.CreditMemo?.[0];\n\nconsole.log(`Credit Note ${cnData.lagoCreditNoteNumber} already exists in QuickBooks as ID: ${existingCN?.Id}`);\n\nreturn [{\n  json: {\n    skipped: true,\n    reason: 'Credit Note already exists in QuickBooks',\n    lagoCreditNoteNumber: cnData.lagoCreditNoteNumber,\n    lagoCreditNoteId: cnData.lagoCreditNoteId,\n    qbCreditMemoId: existingCN?.Id,\n    qbDocNumber: existingCN?.DocNumber\n  }\n}];"
+      },
+      "id": "skip-duplicate-cn",
+      "name": "Skip Duplicate CN",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2700, 450]
     }  ],
   "connections": {
     "Lago Webhook Receiver": {
@@ -580,6 +902,17 @@
       ]
     },
     "Verify HMAC Signature": {
+      "main": [
+        [
+          {
+            "node": "Item Mappings Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Item Mappings Config": {
       "main": [
         [
           {
@@ -684,6 +1017,17 @@
       "main": [
         [
           {
+            "node": "Map Lago Items to QB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Lago Items to QB": {
+      "main": [
+        [
+          {
             "node": "Lookup Customer for Invoice",
             "type": "main",
             "index": 0
@@ -692,6 +1036,46 @@
       ]
     },
     "Lookup Customer for Invoice": {
+      "main": [
+        [
+          {
+            "node": "Customer Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Customer Exists?": {
+      "main": [
+        [
+          {
+            "node": "Finalize Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Customer for Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Customer for Invoice": {
+      "main": [
+        [
+          {
+            "node": "Create Customer for Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Customer for Invoice": {
       "main": [
         [
           {
@@ -706,6 +1090,35 @@
       "main": [
         [
           {
+            "node": "Lookup Invoice in QB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Invoice in QB": {
+      "main": [
+        [
+          {
+            "node": "Invoice Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Invoice Exists?": {
+      "main": [
+        [
+          {
+            "node": "Skip Duplicate Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Create Invoice in QB",
             "type": "main",
             "index": 0
@@ -714,6 +1127,17 @@
       ]
     },
         "Transform Credit Note": {
+      "main": [
+        [
+          {
+            "node": "Map CN Items to QB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map CN Items to QB": {
       "main": [
         [
           {
@@ -728,6 +1152,46 @@
       "main": [
         [
           {
+            "node": "CN Customer Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CN Customer Exists?": {
+      "main": [
+        [
+          {
+            "node": "Finalize Credit Note",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Customer for CN",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Customer for CN": {
+      "main": [
+        [
+          {
+            "node": "Create Customer for CN",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Customer for CN": {
+      "main": [
+        [
+          {
             "node": "Finalize Credit Note",
             "type": "main",
             "index": 0
@@ -737,6 +1201,35 @@
     },
     "Finalize Credit Note": {
       "main": [
+        [
+          {
+            "node": "Lookup CN in QB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup CN in QB": {
+      "main": [
+        [
+          {
+            "node": "CN Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CN Exists?": {
+      "main": [
+        [
+          {
+            "node": "Skip Duplicate CN",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Create Credit Memo QB",

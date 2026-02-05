@@ -8,11 +8,19 @@ This integration handles the following Lago webhook events and creates correspon
 
 | Lago Event | QuickBooks Action |
 |------------|-------------------|
-| `customer.created` | Create Customer |
-| `customer.updated` | Update Customer |
-| `invoice.generated` | Create Invoice with Line Items |
-| `credit_note.generated` | Create Credit Memo |
+| `customer.created` | Create/Update Customer |
+| `customer.updated` | Create/Update Customer |
+| `invoice.created` | Create Invoice with Line Items |
+| `invoice.one_off_created` | Create Invoice with Line Items |
+| `credit_note.created` | Create Credit Memo |
 | `invoice.payment_status_updated` | Create Payment (if succeeded) |
+
+### Key Features
+
+- **Item Mappings**: Map Lago item codes to QuickBooks Item IDs with fallbacks
+- **Tax Override**: Manually set tax amounts using QuickBooks tax override feature
+- **Customer Auto-Creation**: Automatically creates customers if they don't exist when processing invoices/credit notes
+- **Duplicate Prevention**: Checks if invoice/credit memo already exists before creating
 
 ## Architecture
 
@@ -38,19 +46,32 @@ This integration handles the following Lago webhook events and creates correspon
 3. Select `workflows/lago-quickbooks-main.json`
 4. The workflow will be imported with all nodes configured
 
-### 2. Configure Environment Variables
+### 2. Configure Workflow Settings
 
-Set the following environment variables in N8N:
+The workflow configuration is done directly in the **Verify HMAC Signature** node. Edit the `CONFIG` object:
 
-```bash
-# Lago Configuration
-LAGO_WEBHOOK_SECRET=your_lago_webhook_secret
+```javascript
+const CONFIG = {
+  // Lago Settings
+  LAGO_WEBHOOK_SECRET: 'your_lago_webhook_secret_here',
+  BYPASS_SIGNATURE: true,  // Set to false in production
 
-# QuickBooks Configuration
-QB_ENVIRONMENT=sandbox  # or 'production'
-QB_REALM_ID=your_company_id
-QB_DEFAULT_ITEM_ID=1
-QB_DISCOUNT_ACCOUNT_ID=1
+  // QuickBooks Settings
+  QB_ENVIRONMENT: 'sandbox',  // 'sandbox' or 'production'
+  QB_REALM_ID: 'your_quickbooks_company_id',
+  QB_DEFAULT_ITEM_ID: '1',           // Default item for line items
+  QB_TAX_CODE_ID: '',                // Tax Code ID for manual tax override
+  QB_TAX_RATE_ID: '',                // Tax Rate ID for manual tax override
+  QB_DISCOUNT_ACCOUNT_ID: '1'        // Account for discounts/credits
+};
+```
+
+#### Finding QuickBooks IDs
+
+To find your Tax Code and Tax Rate IDs, query QuickBooks:
+```sql
+SELECT * FROM TaxCode
+SELECT * FROM TaxRate
 ```
 
 ### 3. Set Up QuickBooks OAuth2 Credentials
@@ -84,14 +105,14 @@ QB_DISCOUNT_ACCOUNT_ID=1
 Lago Webhook Receiver
         │
         ▼
-Verify HMAC Signature
+Verify HMAC Signature ──► Item Mappings Config
         │
         ▼
 Route by Webhook Type ─────┬───────────┬───────────┬───────────┐
         │                  │           │           │           │
         ▼                  ▼           ▼           ▼           ▼
    Customer            Customer    Invoice     Credit      Payment
-   Created             Updated    Generated    Note       Updated
+   Created             Updated    Created      Note       Updated
         │                  │           │           │           │
         ▼                  ▼           ▼           ▼           ▼
    Transform           Transform   Transform   Transform   Extract
@@ -99,17 +120,36 @@ Route by Webhook Type ─────┬───────────┬─�
         │                  │           │        Note         Info
         └────────┬─────────┘           │           │           │
                  ▼                     ▼           ▼           ▼
-          Lookup Customer        Lookup Customer  ...     Lookup Invoice
-                 │                     │                       │
-                 ▼                     ▼                       ▼
-          Prepare Upsert        Finalize Invoice        Check Status
-                 │                     │                    │    │
-                 ▼                     ▼                    ▼    ▼
-        Create/Update QB        Create Invoice QB     Payment  Log
-              Customer                                        Status
-                 │                     │                  │
-                 └─────────────────────┴──────────────────┴─► Respond Success
+          Lookup Customer         Map Items    Map Items   Lookup Invoice
+                 │                     │           │           │
+                 ▼                     ▼           ▼           ▼
+          Prepare Upsert        Lookup Cust  Lookup Cust  Check Status
+                 │                     │           │        │    │
+                 ▼                     ▼           ▼        ▼    ▼
+        Create/Update QB      Customer Exists? Customer?  Payment Log
+                             ┌───┴───┐     ┌───┴───┐
+                             ▼       ▼     ▼       ▼
+                          Finalize  Create Finalize Create
+                          Invoice   Cust   CN      Cust
+                             │       │     │       │
+                             └───┬───┘     └───┬───┘
+                                 ▼             ▼
+                          Lookup Invoice  Lookup CN
+                                 │             │
+                                 ▼             ▼
+                          Invoice Exists? CN Exists?
+                          ┌───┴───┐     ┌───┴───┐
+                          ▼       ▼     ▼       ▼
+                        Skip   Create  Skip   Create
+                        Dup    Invoice Dup    CN
 ```
+
+### Invoice/Credit Note Flow Features
+
+1. **Item Mapping**: Maps Lago item codes to QuickBooks Item IDs
+2. **Customer Auto-Creation**: Creates customer in QB if not found
+3. **Duplicate Prevention**: Skips creation if document already exists
+4. **Tax Override**: Uses QuickBooks manual tax entry with Lago's calculated tax
 
 ## Data Mapping
 
@@ -152,39 +192,56 @@ Route by Webhook Type ─────┬───────────┬─�
 
 ## Customization
 
-### Adding New Mappings
+### Item Mappings
 
-Edit `config/mapping-config.json` to customize field mappings:
+Edit the **Item Mappings Config** node to map Lago item codes to QuickBooks Item IDs:
 
-```json
-{
-  "itemMapping": {
-    "mappings": {
-      "your_lago_item_code": {
-        "qbItemId": "123",
-        "qbItemName": "Your QB Item"
-      }
-    }
-  }
-}
+```javascript
+const MAPPINGS = {
+  // Map Lago fees.item.code to QuickBooks Item IDs
+  ITEM_MAPPINGS: {
+    'startup_plan': '1',      // Lago code → QB Item ID
+    'premium_plan': '2',
+    'api_calls': '3',
+  },
+  ITEM_FALLBACK_ID: '1',      // Used when no mapping found
+
+  // Map Lago tax codes (optional, uses TAX/NON by default)
+  TAX_MAPPINGS: {
+    'french_standard_vat': 'TAX',
+    'tax_exempt': 'NON',
+  },
+  TAX_FALLBACK_REF: 'NON',
+
+  // Map Lago credit codes to QuickBooks Discount Account IDs
+  DISCOUNT_MAPPINGS: {
+    'startup_deal': '1',
+    'loyalty_discount': '2',
+  },
+  DISCOUNT_FALLBACK_ACCOUNT_ID: '1'
+};
 ```
 
-### Custom Tax Codes
+### Tax Override Configuration
 
-Map Lago tax codes to QuickBooks tax codes:
+To use Lago's calculated tax amount instead of QuickBooks automatic tax:
 
-```json
-{
-  "taxCodeMapping": {
-    "mappings": {
-      "your_lago_tax_code": {
-        "qbTaxCodeId": "TAX",
-        "qbTaxRateId": "5"
-      }
-    }
-  }
-}
-```
+1. Find your QuickBooks Tax Code and Tax Rate IDs:
+   ```sql
+   SELECT * FROM TaxCode   -- Get TxnTaxCodeRef value
+   SELECT * FROM TaxRate   -- Get TaxRateRef value
+   ```
+
+2. Configure in the **Verify HMAC Signature** node:
+   ```javascript
+   QB_TAX_CODE_ID: '2',    // Your Tax Code ID
+   QB_TAX_RATE_ID: '3',    // Your Tax Rate ID
+   ```
+
+3. The workflow will use QuickBooks' "Enter sales tax manually" feature with:
+   - Tax Rate from configuration
+   - Tax Amount from Lago (`taxes_amount_cents`)
+   - `PercentBased: false` for exact override
 
 ### Modifying Transformations
 
@@ -197,11 +254,12 @@ To modify how data is transformed, edit the corresponding Code nodes in the work
 
 ## Error Handling
 
-The workflow includes error handling for common scenarios:
+The workflow includes built-in handling for common scenarios:
 
-1. **Invalid Signature**: Rejects webhooks with invalid HMAC signatures
-2. **Customer Not Found**: Throws error if invoice references non-existent customer
-3. **Invoice Not Found**: Throws error if payment references non-existent invoice
+1. **Invalid Signature**: Rejects webhooks with invalid HMAC signatures (when `BYPASS_SIGNATURE: false`)
+2. **Customer Not Found**: Automatically creates customer if not found (for invoices/credit notes)
+3. **Duplicate Documents**: Skips creation if invoice/credit note already exists in QuickBooks
+4. **Invoice Not Found for Payment**: Throws error if payment references non-existent invoice
 
 ### Recommended Error Workflow
 
@@ -243,12 +301,14 @@ After processing, verify in QuickBooks:
 ## Production Checklist
 
 - [ ] Change `QB_ENVIRONMENT` to `production`
+- [ ] Set `BYPASS_SIGNATURE` to `false`
 - [ ] Update QuickBooks OAuth credentials for production
+- [ ] Configure `QB_TAX_CODE_ID` and `QB_TAX_RATE_ID` for tax override
+- [ ] Configure item mappings in **Item Mappings Config** node
+- [ ] Set proper `QB_DEFAULT_ITEM_ID` for unmapped items
 - [ ] Configure proper error handling workflow
 - [ ] Set up monitoring/alerting
 - [ ] Test with real Lago webhooks
-- [ ] Verify all tax codes are mapped correctly
-- [ ] Configure proper item mappings
 - [ ] Enable workflow execution logging
 
 ## Troubleshooting

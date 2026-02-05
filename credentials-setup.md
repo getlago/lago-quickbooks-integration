@@ -52,6 +52,32 @@ In your Intuit Developer app settings:
    https://app.qbo.intuit.com/app/homepage?companyId=YOUR_REALM_ID
    ```
 
+### Step 5: Get Tax Code and Tax Rate IDs (for Tax Override)
+
+To use Lago's calculated tax instead of QuickBooks automatic tax, you need the Tax Code and Tax Rate IDs.
+
+**Option A: Query via API**
+
+Use an HTTP Request node in N8N with your QuickBooks credentials:
+
+```
+GET https://sandbox-quickbooks.api.intuit.com/v3/company/YOUR_REALM_ID/query?query=SELECT * FROM TaxCode
+```
+
+```
+GET https://sandbox-quickbooks.api.intuit.com/v3/company/YOUR_REALM_ID/query?query=SELECT * FROM TaxRate
+```
+
+**Option B: Use QuickBooks API Explorer**
+
+1. Go to [Intuit Developer API Explorer](https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/taxcode)
+2. Connect your sandbox/production company
+3. Run queries for TaxCode and TaxRate entities
+
+Note the `Id` values from the responses for:
+- **QB_TAX_CODE_ID**: The TaxCode Id (e.g., "2")
+- **QB_TAX_RATE_ID**: The TaxRate Id (e.g., "3")
+
 ---
 
 ## 2. Lago API Credentials (for Initial Sync)
@@ -168,9 +194,13 @@ Share the sheet with your service account email.
 Before running the integration, ensure you have:
 
 - [ ] QuickBooks OAuth2 credential created and connected
-- [ ] Realm ID noted and added to environment
-- [ ] Lago API Key credential (for initial sync only)
-- [ ] Lago Webhook Secret added to environment
+- [ ] Realm ID noted and configured in workflow (`QB_REALM_ID`)
+- [ ] Default Item ID configured (`QB_DEFAULT_ITEM_ID`)
+- [ ] Tax Code ID configured for tax override (`QB_TAX_CODE_ID`)
+- [ ] Tax Rate ID configured for tax override (`QB_TAX_RATE_ID`)
+- [ ] Lago Webhook Secret configured (`LAGO_WEBHOOK_SECRET`)
+- [ ] Item mappings configured in **Item Mappings Config** node
+- [ ] (Optional) Lago API Key credential (for initial sync only)
 - [ ] (Optional) Slack credential for alerts
 - [ ] (Optional) Google Sheets credential for logging
 
@@ -214,4 +244,15 @@ Use the N8N webhook test feature:
 
 ### "Entity not found"
 - The referenced customer/invoice doesn't exist in QuickBooks
-- Ensure customers are synced before invoices
+- For invoices/credit notes: Customer is auto-created if not found
+- For payments: Ensure the invoice exists before payment webhook
+
+### Tax not appearing on invoice
+- Ensure `QB_TAX_CODE_ID` and `QB_TAX_RATE_ID` are configured
+- Verify Tax Code and Tax Rate exist in your QuickBooks company
+- Check that the Lago invoice has `taxes_amount_cents > 0`
+
+### Duplicate invoice/credit note created
+- The workflow checks by `DocNumber` (Lago invoice/credit note number)
+- Ensure the Lago number is unique
+- Check if an existing document was manually created with the same number
