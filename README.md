@@ -18,7 +18,7 @@ This integration handles the following Lago webhook events and creates correspon
 ### Key Features
 
 - **Item Mappings**: Map Lago item codes to QuickBooks Item IDs with fallbacks
-- **Tax Override**: Manually set tax amounts using QuickBooks tax override feature
+- **Tax Override**: Uses Lago's exact tax amounts via `TxnTaxDetail.TotalTax` (works with AST enabled using `minorversion=70`)
 - **Customer Auto-Creation**: Automatically creates customers if they don't exist when processing invoices/credit notes
 - **Duplicate Prevention**: Checks if invoice/credit memo already exists before creating
 
@@ -48,7 +48,9 @@ This integration handles the following Lago webhook events and creates correspon
 
 ### 2. Configure Workflow Settings
 
-The workflow configuration is done directly in the **Verify HMAC Signature** node. Edit the `CONFIG` object:
+The workflow configuration is split between two nodes:
+
+#### Verify HMAC Signature Node (Basic Settings)
 
 ```javascript
 const CONFIG = {
@@ -60,19 +62,13 @@ const CONFIG = {
   QB_ENVIRONMENT: 'sandbox',  // 'sandbox' or 'production'
   QB_REALM_ID: 'your_quickbooks_company_id',
   QB_DEFAULT_ITEM_ID: '1',           // Default item for line items
-  QB_TAX_CODE_ID: '',                // Tax Code ID for manual tax override
-  QB_TAX_RATE_ID: '',                // Tax Rate ID for manual tax override
   QB_DISCOUNT_ACCOUNT_ID: '1'        // Account for discounts/credits
 };
 ```
 
-#### Finding QuickBooks IDs
+#### Item Mappings Config Node (Mappings & Tax)
 
-To find your Tax Code and Tax Rate IDs, query QuickBooks:
-```sql
-SELECT * FROM TaxCode
-SELECT * FROM TaxRate
-```
+See [Item Mappings](#item-mappings) and [Tax Override](#tax-override-configuration) sections below.
 
 ### 3. Set Up QuickBooks OAuth2 Credentials
 
@@ -149,7 +145,7 @@ Route by Webhook Type ─────┬───────────┬─�
 1. **Item Mapping**: Maps Lago item codes to QuickBooks Item IDs
 2. **Customer Auto-Creation**: Creates customer in QB if not found
 3. **Duplicate Prevention**: Skips creation if document already exists
-4. **Tax Override**: Uses QuickBooks manual tax entry with Lago's calculated tax
+4. **Tax Override**: Uses `TxnTaxDetail.TotalTax` to pass Lago's exact tax amount (requires `minorversion=70`)
 
 ## Data Mapping
 
@@ -178,7 +174,7 @@ Route by Webhook Type ─────┬───────────┬─�
 | `currency` | `CurrencyRef.value` |
 | `fees[]` | `Line[]` (SalesItemLineDetail) |
 | `credits[]` | `Line[]` (DiscountLineDetail) |
-| `applied_taxes[]` | `TxnTaxDetail.TaxLine[]` |
+| `taxes_amount_cents` | `TxnTaxDetail.TotalTax` |
 
 ### Fee to Line Item Mapping
 
@@ -189,6 +185,24 @@ Route by Webhook Type ─────┬───────────┬─�
 | `units` | `SalesItemLineDetail.Qty` |
 | `precise_unit_amount` | `SalesItemLineDetail.UnitPrice` |
 | `taxes_rate > 0` | `TaxCodeRef: TAX/NON` |
+
+### Credit Note Mapping
+
+| Lago Field | QuickBooks Field |
+|------------|------------------|
+| `number` | `DocNumber` |
+| `issuing_date` | `TxnDate` |
+| `currency` | `CurrencyRef.value` |
+| `items[]` | `Line[]` (SalesItemLineDetail) |
+| `taxes_amount_cents` | `TxnTaxDetail.TotalTax` |
+
+### Credit Note Item to Line Item Mapping
+
+| Lago Credit Note Item Field | QuickBooks Line Field |
+|-----------------------------|----------------------|
+| `amount_cents` / 100 | `Amount` |
+| `fee.item.invoice_display_name` / `fee.item.name` | `Description` |
+| `fee.taxes_rate > 0` | `TaxCodeRef: TAX/NON` |
 
 ## Customization
 
@@ -206,12 +220,8 @@ const MAPPINGS = {
   },
   ITEM_FALLBACK_ID: '1',      // Used when no mapping found
 
-  // Map Lago tax codes (optional, uses TAX/NON by default)
-  TAX_MAPPINGS: {
-    'french_standard_vat': 'TAX',
-    'tax_exempt': 'NON',
-  },
-  TAX_FALLBACK_REF: 'NON',
+  // Tax Code for tax override (see Tax Override section)
+  QB_TAX_CODE_ID: '',         // Your QuickBooks Tax Code ID
 
   // Map Lago credit codes to QuickBooks Discount Account IDs
   DISCOUNT_MAPPINGS: {
@@ -224,24 +234,40 @@ const MAPPINGS = {
 
 ### Tax Override Configuration
 
-To use Lago's calculated tax amount instead of QuickBooks automatic tax:
+This workflow uses Lago's calculated tax amounts instead of QuickBooks Automated Sales Tax (AST). This works even with AST enabled by using `TxnTaxDetail.TotalTax` with API `minorversion=70`.
 
-1. Find your QuickBooks Tax Code and Tax Rate IDs:
+#### How It Works
+
+1. Line items are marked `TAX` or `NON` based on whether they have tax in Lago
+2. The `TxnTaxDetail.TotalTax` field specifies the exact tax amount from Lago
+3. The `TxnTaxCodeRef` associates the transaction with your tax code
+4. API calls use `?minorversion=70` to ensure QuickBooks honors the override
+
+#### Setup
+
+1. Find your QuickBooks Tax Code ID:
    ```sql
-   SELECT * FROM TaxCode   -- Get TxnTaxCodeRef value
-   SELECT * FROM TaxRate   -- Get TaxRateRef value
+   SELECT * FROM TaxCode
    ```
 
-2. Configure in the **Verify HMAC Signature** node:
+2. Configure in the **Item Mappings Config** node:
    ```javascript
    QB_TAX_CODE_ID: '2',    // Your Tax Code ID
-   QB_TAX_RATE_ID: '3',    // Your Tax Rate ID
    ```
 
-3. The workflow will use QuickBooks' "Enter sales tax manually" feature with:
-   - Tax Rate from configuration
-   - Tax Amount from Lago (`taxes_amount_cents`)
-   - `PercentBased: false` for exact override
+#### Example
+
+For a Lago invoice with $1000 subtotal + $250 tax (25%):
+- Line items total: $1000 (marked as `TAX`)
+- `TxnTaxDetail.TotalTax`: $250
+- QuickBooks invoice total: $1250
+
+For a Lago credit note with $500 subtotal + $125 tax (25%):
+- Line items total: $500 (marked as `TAX`)
+- `TxnTaxDetail.TotalTax`: $125
+- QuickBooks credit memo total: $625
+
+QuickBooks will display the exact tax amounts from Lago regardless of any tax rates configured in your AST settings.
 
 ### Modifying Transformations
 
@@ -295,15 +321,16 @@ curl -X POST https://your-n8n-instance.com/webhook-test/lago-webhook \
 
 After processing, verify in QuickBooks:
 1. **Customers**: Check for new/updated customer records
-2. **Invoices**: Verify line items, taxes, and discounts
-3. **Payments**: Confirm payment is linked to invoice
+2. **Invoices**: Verify line items, taxes, and total amounts
+3. **Credit Memos**: Verify line items, taxes, and total amounts
+4. **Payments**: Confirm payment is linked to invoice
 
 ## Production Checklist
 
 - [ ] Change `QB_ENVIRONMENT` to `production`
 - [ ] Set `BYPASS_SIGNATURE` to `false`
 - [ ] Update QuickBooks OAuth credentials for production
-- [ ] Configure `QB_TAX_CODE_ID` and `QB_TAX_RATE_ID` for tax override
+- [ ] Configure `QB_TAX_CODE_ID` in **Item Mappings Config** node for tax override
 - [ ] Configure item mappings in **Item Mappings Config** node
 - [ ] Set proper `QB_DEFAULT_ITEM_ID` for unmapped items
 - [ ] Configure proper error handling workflow
@@ -400,6 +427,11 @@ The workflow uses a lookup-first approach to prevent duplicates:
 4. **Currency Mismatch**
    - QuickBooks may require multi-currency to be enabled
    - Ensure currency codes match QB supported currencies
+
+5. **Tax Amount Not Matching**
+   - Ensure `QB_TAX_CODE_ID` is configured in Item Mappings Config
+   - Verify the API call includes `?minorversion=70` (already configured in workflow)
+   - The workflow uses `TxnTaxDetail.TotalTax` to override AST calculations
 
 ### Debugging
 
