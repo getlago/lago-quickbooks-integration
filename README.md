@@ -186,6 +186,24 @@ Route by Webhook Type ─────┬───────────┬─�
 | `precise_unit_amount` | `SalesItemLineDetail.UnitPrice` |
 | `taxes_rate > 0` | `TaxCodeRef: TAX/NON` |
 
+### Credit Note Mapping
+
+| Lago Field | QuickBooks Field |
+|------------|------------------|
+| `number` | `DocNumber` |
+| `issuing_date` | `TxnDate` |
+| `currency` | `CurrencyRef.value` |
+| `items[]` | `Line[]` (SalesItemLineDetail) |
+| `taxes_amount_cents` | `TxnTaxDetail.TotalTax` |
+
+### Credit Note Item to Line Item Mapping
+
+| Lago Credit Note Item Field | QuickBooks Line Field |
+|-----------------------------|----------------------|
+| `amount_cents` / 100 | `Amount` |
+| `fee.item.invoice_display_name` / `fee.item.name` | `Description` |
+| `fee.taxes_rate > 0` | `TaxCodeRef: TAX/NON` |
+
 ## Customization
 
 ### Item Mappings
@@ -244,7 +262,12 @@ For a Lago invoice with $1000 subtotal + $250 tax (25%):
 - `TxnTaxDetail.TotalTax`: $250
 - QuickBooks invoice total: $1250
 
-QuickBooks will display the tax as $250 regardless of any tax rates configured in your AST settings.
+For a Lago credit note with $500 subtotal + $125 tax (25%):
+- Line items total: $500 (marked as `TAX`)
+- `TxnTaxDetail.TotalTax`: $125
+- QuickBooks credit memo total: $625
+
+QuickBooks will display the exact tax amounts from Lago regardless of any tax rates configured in your AST settings.
 
 ### Modifying Transformations
 
@@ -298,8 +321,9 @@ curl -X POST https://your-n8n-instance.com/webhook-test/lago-webhook \
 
 After processing, verify in QuickBooks:
 1. **Customers**: Check for new/updated customer records
-2. **Invoices**: Verify line items, taxes, and discounts
-3. **Payments**: Confirm payment is linked to invoice
+2. **Invoices**: Verify line items, taxes, and total amounts
+3. **Credit Memos**: Verify line items, taxes, and total amounts
+4. **Payments**: Confirm payment is linked to invoice
 
 ## Production Checklist
 
