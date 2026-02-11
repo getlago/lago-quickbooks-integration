@@ -174,6 +174,28 @@
               },
               "renameOutput": true,
               "outputKey": "credit_note_generated"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.webhook_type }}",
+                    "rightValue": "invoice.voided",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "invoice_voided"
             }
           ]
         },
@@ -976,6 +998,91 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [1200, 700]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst CONFIG = input._config;\nconst lagoInvoice = input.invoice;\n\nreturn [{ json: { lagoInvoiceNumber: lagoInvoice.number, lagoInvoiceId: lagoInvoice.lago_id, _config: CONFIG } }];"
+      },
+      "id": "extract-void-invoice-info",
+      "name": "Extract Void Invoice Info",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 850]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/query?query=SELECT * FROM Invoice WHERE DocNumber = '{{ $json.lagoInvoiceNumber }}'",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
+      },
+      "id": "lookup-invoice-for-void",
+      "name": "Lookup Invoice for Void",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 850],
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "quickbooks-oauth2",
+          "name": "QuickBooks OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 1,
+        "unit": "seconds"
+      },
+      "id": "wait-after-void-lookup",
+      "name": "Wait Void Lookup",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1200, 850]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://{{ $('Extract Void Invoice Info').first().json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $('Extract Void Invoice Info').first().json._config.QB_REALM_ID }}/invoice?operation=void",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ Id: $json.QueryResponse?.Invoice?.[0]?.Id, SyncToken: $json.QueryResponse?.Invoice?.[0]?.SyncToken }) }}",
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
+      },
+      "id": "void-invoice-qb",
+      "name": "Void Invoice in QB",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1400, 850],
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "quickbooks-oauth2",
+          "name": "QuickBooks OAuth2"
+        }
+      }
     }
   ],
   "connections": {
@@ -1052,6 +1159,46 @@
         [
           {
             "node": "Transform Credit Note",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract Void Invoice Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Void Invoice Info": {
+      "main": [
+        [
+          {
+            "node": "Lookup Invoice for Void",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Invoice for Void": {
+      "main": [
+        [
+          {
+            "node": "Wait Void Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Void Lookup": {
+      "main": [
+        [
+          {
+            "node": "Void Invoice in QB",
             "type": "main",
             "index": 0
           }
