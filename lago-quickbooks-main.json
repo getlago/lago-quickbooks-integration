@@ -26,7 +26,7 @@
       "name": "Item Mappings Config",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [550, 300]
+      "position": [650, 300]
     },
     {
       "parameters": {
@@ -174,6 +174,28 @@
               },
               "renameOutput": true,
               "outputKey": "credit_note_generated"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.webhook_type }}",
+                    "rightValue": "invoice.voided",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "invoice_voided"
             }
           ]
         },
@@ -183,7 +205,7 @@
       "name": "Route by Webhook Type",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
-      "position": [650, 300]
+      "position": [850, 300]
     },
     {
       "parameters": {
@@ -193,7 +215,7 @@
       "name": "Transform Customer Create",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 100]
+      "position": [1250, 150]
     },
     {
       "parameters": {
@@ -203,7 +225,7 @@
       "name": "Transform Customer Update",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 250]
+      "position": [1250, 300]
     },
     {
       "parameters": {
@@ -223,7 +245,7 @@
       "name": "Lookup Customer in QB",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1100, 175],
+      "position": [1500, 150],
       "credentials": {
         "quickBooksOAuth2Api": {
           "id": "quickbooks-oauth2",
@@ -239,7 +261,7 @@
       "name": "Prepare Customer Upsert",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1350, 175]
+      "position": [1900, 150]
     },
     {
       "parameters": {
@@ -275,7 +297,7 @@
       "name": "Create Update Customer QB",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1550, 175],
+      "position": [2100, 150],
       "credentials": {
         "quickBooksOAuth2Api": {
           "id": "quickbooks-oauth2",
@@ -291,7 +313,7 @@
       "name": "Transform Invoice",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 400]
+      "position": [1250, 500]
     },
     {
       "parameters": {
@@ -301,7 +323,7 @@
       "name": "Map Lago Items to QB",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1100, 400]
+      "position": [1450, 500]
     },
     {
       "parameters": {
@@ -321,7 +343,7 @@
       "name": "Lookup Customer for Invoice",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1300, 400],
+      "position": [1650, 500],
       "credentials": {
         "quickBooksOAuth2Api": {
           "id": "quickbooks-oauth2",
@@ -355,7 +377,7 @@
       "name": "Customer Exists?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1550, 400]
+      "position": [1950, 500]
     },
     {
       "parameters": {
@@ -365,7 +387,7 @@
       "name": "Prepare Customer for Invoice",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1700, 500]
+      "position": [2200, 650]
     },
     {
       "parameters": {
@@ -401,7 +423,7 @@
       "name": "Create Customer for Invoice",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1900, 500],
+      "position": [2450, 650],
       "credentials": {
         "quickBooksOAuth2Api": {
           "id": "quickbooks-oauth2",
@@ -417,7 +439,7 @@
       "name": "Finalize Invoice",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2100, 400]
+      "position": [2800, 500]
     },
     {
       "parameters": {
@@ -437,7 +459,7 @@
       "name": "Lookup Invoice in QB",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2300, 400],
+      "position": [3000, 500],
       "credentials": {
         "quickBooksOAuth2Api": {
           "id": "quickbooks-oauth2",
@@ -471,7 +493,7 @@
       "name": "Invoice Exists?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [2550, 400]
+      "position": [3300, 500]
     },
     {
       "parameters": {
@@ -481,7 +503,7 @@
       "name": "Skip Duplicate Invoice",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2700, 300]
+      "position": [3550, 400]
     },
     {
       "parameters": {
@@ -517,7 +539,7 @@
       "name": "Create Invoice in QB",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2700, 500],
+      "position": [3550, 550],
       "credentials": {
         "quickBooksOAuth2Api": {
           "id": "quickbooks-oauth2",
@@ -533,7 +555,7 @@
       "name": "Transform Credit Note",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 550]
+      "position": [1250, 900]
     },
     {
       "parameters": {
@@ -553,7 +575,7 @@
       "name": "Lookup Customer for CN",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1300, 550],
+      "position": [1650, 900],
       "credentials": {
         "quickBooksOAuth2Api": {
           "id": "quickbooks-oauth2",
@@ -569,7 +591,7 @@
       "name": "Finalize Credit Note",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2100, 550]
+      "position": [2800, 900]
     },
     {
       "parameters": {
@@ -605,7 +627,7 @@
       "name": "Create Credit Memo QB",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2700, 650],
+      "position": [3550, 1050],
       "credentials": {
         "quickBooksOAuth2Api": {
           "id": "quickbooks-oauth2",
@@ -621,7 +643,7 @@
       "name": "Extract Payment Info",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 700]
+      "position": [1250, 1250]
     },
     {
       "parameters": {
@@ -641,7 +663,7 @@
       "name": "Lookup Invoice for Payment",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1100, 700],
+      "position": [1450, 1250],
       "credentials": {
         "quickBooksOAuth2Api": {
           "id": "quickbooks-oauth2",
@@ -675,7 +697,7 @@
       "name": "Payment Succeeded",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1350, 700]
+      "position": [1750, 1250]
     },
     {
       "parameters": {
@@ -685,7 +707,7 @@
       "name": "Create Payment Object",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1500, 650]
+      "position": [2050, 1250]
     },
     {
       "parameters": {
@@ -717,7 +739,7 @@
       "name": "Create Payment in QB",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1700, 650],
+      "position": [2400, 1250],
       "credentials": {
         "quickBooksOAuth2Api": {
           "id": "quickbooks-oauth2",
@@ -733,7 +755,7 @@
       "name": "Log Payment Status",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1500, 800]
+      "position": [2050, 1400]
     },
     {
       "parameters": {
@@ -743,7 +765,7 @@
       "name": "Map CN Items to QB",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1100, 550]
+      "position": [1450, 900]
     },
     {
       "parameters": {
@@ -771,7 +793,7 @@
       "name": "CN Customer Exists?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1550, 550]
+      "position": [1950, 900]
     },
     {
       "parameters": {
@@ -781,7 +803,7 @@
       "name": "Prepare Customer for CN",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1700, 650]
+      "position": [2200, 1050]
     },
     {
       "parameters": {
@@ -817,7 +839,7 @@
       "name": "Create Customer for CN",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1900, 650],
+      "position": [2450, 1050],
       "credentials": {
         "quickBooksOAuth2Api": {
           "id": "quickbooks-oauth2",
@@ -843,7 +865,7 @@
       "name": "Lookup CN in QB",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2300, 550],
+      "position": [3000, 900],
       "credentials": {
         "quickBooksOAuth2Api": {
           "id": "quickbooks-oauth2",
@@ -877,7 +899,7 @@
       "name": "CN Exists?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [2550, 550]
+      "position": [3300, 900]
     },
     {
       "parameters": {
@@ -887,7 +909,7 @@
       "name": "Skip Duplicate CN",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2700, 450]
+      "position": [3550, 750]
     },
     {
       "parameters": {
@@ -898,7 +920,7 @@
       "name": "Wait Customer",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
-      "position": [1200, 175]
+      "position": [1700, 150]
     },
     {
       "parameters": {
@@ -909,7 +931,7 @@
       "name": "Wait Inv Cust",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
-      "position": [1400, 400]
+      "position": [1800, 500]
     },
     {
       "parameters": {
@@ -920,7 +942,7 @@
       "name": "Wait Inv Cust Create",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
-      "position": [2000, 500]
+      "position": [2650, 650]
     },
     {
       "parameters": {
@@ -931,7 +953,7 @@
       "name": "Wait Invoice",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
-      "position": [2400, 400]
+      "position": [3150, 500]
     },
     {
       "parameters": {
@@ -942,7 +964,7 @@
       "name": "Wait CN Cust",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
-      "position": [1400, 550]
+      "position": [1800, 900]
     },
     {
       "parameters": {
@@ -953,7 +975,7 @@
       "name": "Wait CN Cust Create",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
-      "position": [2000, 650]
+      "position": [2650, 1050]
     },
     {
       "parameters": {
@@ -964,7 +986,7 @@
       "name": "Wait CN",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
-      "position": [2400, 550]
+      "position": [3150, 900]
     },
     {
       "parameters": {
@@ -975,7 +997,92 @@
       "name": "Wait Payment",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
-      "position": [1200, 700]
+      "position": [1600, 1250]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst CONFIG = input._config;\nconst lagoInvoice = input.invoice;\n\nreturn [{ json: { lagoInvoiceNumber: lagoInvoice.number, lagoInvoiceId: lagoInvoice.lago_id, _config: CONFIG } }];"
+      },
+      "id": "extract-void-invoice-info",
+      "name": "Extract Void Invoice Info",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 1600]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://{{ $json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $json._config.QB_REALM_ID }}/query?query=SELECT * FROM Invoice WHERE DocNumber = '{{ $json.lagoInvoiceNumber }}'",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
+      },
+      "id": "lookup-invoice-for-void",
+      "name": "Lookup Invoice for Void",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1450, 1600],
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "quickbooks-oauth2",
+          "name": "QuickBooks OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 1,
+        "unit": "seconds"
+      },
+      "id": "wait-after-void-lookup",
+      "name": "Wait Void Lookup",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1600, 1600]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://{{ $('Extract Void Invoice Info').first().json._config.QB_ENVIRONMENT === 'production' ? '' : 'sandbox-' }}quickbooks.api.intuit.com/v3/company/{{ $('Extract Void Invoice Info').first().json._config.QB_REALM_ID }}/invoice?operation=void",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ Id: $json.QueryResponse?.Invoice?.[0]?.Id, SyncToken: $json.QueryResponse?.Invoice?.[0]?.SyncToken }) }}",
+        "options": {
+          "retry": {
+            "maxTries": 5,
+            "retryInterval": 1000,
+            "retryIntervalMultiplier": 2
+          }
+        }
+      },
+      "id": "void-invoice-qb",
+      "name": "Void Invoice in QB",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1800, 1600],
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "quickbooks-oauth2",
+          "name": "QuickBooks OAuth2"
+        }
+      }
     }
   ],
   "connections": {
@@ -1052,6 +1159,46 @@
         [
           {
             "node": "Transform Credit Note",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract Void Invoice Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Void Invoice Info": {
+      "main": [
+        [
+          {
+            "node": "Lookup Invoice for Void",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Invoice for Void": {
+      "main": [
+        [
+          {
+            "node": "Wait Void Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Void Lookup": {
+      "main": [
+        [
+          {
+            "node": "Void Invoice in QB",
             "type": "main",
             "index": 0
           }
