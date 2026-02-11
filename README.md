@@ -37,13 +37,20 @@ This integration handles the following Lago webhook events and creates correspon
 2. **Lago Account**: With API access and webhook configuration
 3. **QuickBooks Online Account**: Developer account for OAuth credentials
 
+## Documentation
+
+- **[SETUP-GUIDE.md](SETUP-GUIDE.md)**: Complete setup instructions including OAuth2 credential configuration
+- **[ITEM-TAX-MAPPING-GUIDE.md](ITEM-TAX-MAPPING-GUIDE.md)**: Practical guide for configuring item and tax mappings at scale
+- **[MAPPING.md](MAPPING.md)**: Detailed data mapping reference for all entities (customers, invoices, credit notes, payments)
+- **[mapping-config.json](mapping-config.json)**: JSON schema reference for mapping structure
+
 ## Installation
 
 ### 1. Import the Workflow
 
 1. Open your N8N instance
 2. Go to **Workflows** → **Import from File**
-3. Select `workflows/lago-quickbooks-main.json`
+3. Select `lago-quickbooks-main.json`
 4. The workflow will be imported with all nodes configured
 
 ### 2. Configure Workflow Settings
@@ -72,8 +79,10 @@ See [Item Mappings](#item-mappings) and [Tax Override](#tax-override-configurati
 
 ### 3. Set Up QuickBooks OAuth2 Credentials
 
-1. Go to **Credentials** in N8N
-2. Create new **OAuth2 API** credential
+**Important**: See [SETUP-GUIDE.md](SETUP-GUIDE.md) for detailed credential setup instructions.
+
+1. Click the **+** button in n8n's top menu → Select **Credentials**
+2. Create new **QuickBooks OAuth2 API** credential
 3. Configure with your QuickBooks app credentials:
 
 | Field | Value |
@@ -149,6 +158,8 @@ Route by Webhook Type ─────┬───────────┬─�
 
 ## Data Mapping
 
+**For comprehensive mapping details, see [MAPPING.md](MAPPING.md).**
+
 ### Customer Mapping
 
 | Lago Field | QuickBooks Field |
@@ -207,6 +218,8 @@ Route by Webhook Type ─────┬───────────┬─�
 ## Customization
 
 ### Item Mappings
+
+**For detailed item and tax mapping configuration, see [ITEM-TAX-MAPPING-GUIDE.md](ITEM-TAX-MAPPING-GUIDE.md).**
 
 Edit the **Item Mappings Config** node to map Lago item codes to QuickBooks Item IDs:
 
