@@ -1,0 +1,47 @@
+# CI for lago-qbo-sync/. This repository is PUBLIC: every push and pull request is scanned for
+# secrets over the full git history, then the folder's typecheck and unit tests run.
+name: lago-qbo-sync
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Read-only token: no job here can write to the repository.
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # full history: a secret removed in a later commit is still public
+          persist-credentials: false
+      - name: Install gitleaks 8.30.1 (checksum-pinned)
+        run: |
+          curl -sSfL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum --check --strict
+          tar -xzf gitleaks.tar.gz gitleaks
+      - name: Scan the repository history
+        run: ./gitleaks git --config lago-qbo-sync/.gitleaks.toml --redact --no-banner --exit-code 1 .
+
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lago-qbo-sync
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: lago-qbo-sync/package-lock.json
+      # --ignore-scripts: no dependency install script runs in CI.
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm test

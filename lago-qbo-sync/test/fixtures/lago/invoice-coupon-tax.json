@@ -1,0 +1,75 @@
+{
+  "_scenario": "Subscription + usage fee, both taxed at 20%, with a $15 coupon (before taxes). Lago math: fees 150.00 - coupon 15.00 = 135.00 net, tax 27.00, total 162.00.",
+  "lago_id": "inv-0000-0000-0000-000000000001",
+  "sequential_id": 1,
+  "number": "ACME-202610-001",
+  "issuing_date": "2026-10-20",
+  "payment_due_date": "2026-11-19",
+  "net_payment_term": 30,
+  "invoice_type": "subscription",
+  "status": "finalized",
+  "payment_status": "pending",
+  "currency": "USD",
+  "fees_amount_cents": 15000,
+  "coupons_amount_cents": 1500,
+  "credit_notes_amount_cents": 0,
+  "prepaid_credit_amount_cents": 0,
+  "progressive_billing_credit_amount_cents": 0,
+  "sub_total_excluding_taxes_amount_cents": 13500,
+  "taxes_amount_cents": 2700,
+  "sub_total_including_taxes_amount_cents": 16200,
+  "total_amount_cents": 16200,
+  "customer": {
+    "lago_id": "cus-0000-0000-0000-000000000001",
+    "external_id": "acme_001",
+    "name": "Acme Robotics",
+    "firstname": null,
+    "lastname": null,
+    "legal_name": "Acme Robotics Inc.",
+    "email": "billing@acme.example",
+    "phone": "+1 555 0100",
+    "address_line1": "1 Main St",
+    "address_line2": null,
+    "city": "Springfield",
+    "state": "CA",
+    "zipcode": "90001",
+    "country": "US",
+    "currency": "USD",
+    "url": "https://acme.example",
+    "tax_identification_number": null
+  },
+  "fees": [
+    {
+      "lago_id": "fee-0001",
+      "amount_cents": 10000,
+      "amount_currency": "USD",
+      "taxes_amount_cents": 1800,
+      "taxes_rate": 20.0,
+      "units": "1.0",
+      "precise_unit_amount": "100.0",
+      "description": null,
+      "item": { "type": "subscription", "code": "startup", "name": "Startup", "invoice_display_name": "Startup plan" }
+    },
+    {
+      "lago_id": "fee-0002",
+      "amount_cents": 5000,
+      "amount_currency": "USD",
+      "taxes_amount_cents": 900,
+      "taxes_rate": 20.0,
+      "units": "2500.0",
+      "precise_unit_amount": "0.02",
+      "description": null,
+      "item": { "type": "charge", "code": "api_calls", "name": "API calls", "invoice_display_name": null }
+    }
+  ],
+  "credits": [
+    {
+      "lago_id": "cred-0001",
+      "amount_cents": 1500,
+      "amount_currency": "USD",
+      "before_taxes": true,
+      "item": { "lago_item_id": "coupon-0001", "type": "coupon", "code": "welcome10", "name": "Welcome 10%" },
+      "invoice": { "lago_id": "inv-0000-0000-0000-000000000001", "payment_status": "pending" }
+    }
+  ]
+}

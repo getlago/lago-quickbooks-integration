@@ -1,0 +1,18 @@
+{
+  "_scenario": "Shape of DEMO-202611-025 seen in the Lago test org (anonymized): a finalized $0 subscription invoice with no fees and no credits. QBO rejects Line: [] (400, code 2020), so it is skipped and reported.",
+  "lago_id": "inv-0000-0000-0000-000000000008",
+  "number": "ACME-202611-008",
+  "issuing_date": "2026-10-23",
+  "payment_due_date": "2026-11-22",
+  "invoice_type": "subscription",
+  "status": "finalized",
+  "payment_status": "succeeded",
+  "currency": "USD",
+  "fees_amount_cents": 0,
+  "taxes_amount_cents": 0,
+  "prepaid_credit_amount_cents": 0,
+  "total_amount_cents": 0,
+  "customer": { "lago_id": "cus-0000-0000-0000-000000000005", "external_id": "remit_005", "name": "Andes Remit" },
+  "fees": [],
+  "credits": []
+}

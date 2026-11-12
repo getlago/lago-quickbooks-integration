@@ -1,0 +1,45 @@
+{
+  "_scenario": "Taxed fee 100.00 + 10% tax = 110.00, then an applied credit note (after taxes) of 20.00 and prepaid wallet credits of 30.00. Total 60.00.",
+  "lago_id": "inv-0000-0000-0000-000000000003",
+  "number": "ACME-202610-003",
+  "issuing_date": "2026-10-21",
+  "payment_due_date": "2026-11-20",
+  "invoice_type": "subscription",
+  "status": "finalized",
+  "payment_status": "pending",
+  "currency": "USD",
+  "fees_amount_cents": 10000,
+  "taxes_amount_cents": 1000,
+  "credit_notes_amount_cents": 2000,
+  "prepaid_credit_amount_cents": 3000,
+  "total_amount_cents": 6000,
+  "customer": {
+    "lago_id": "cus-0000-0000-0000-000000000002",
+    "external_id": "globex_002",
+    "name": null,
+    "firstname": "Dana",
+    "lastname": "Lee",
+    "legal_name": null,
+    "email": "dana@globex.example",
+    "currency": "USD"
+  },
+  "fees": [
+    {
+      "lago_id": "fee-0004",
+      "amount_cents": 10000,
+      "taxes_amount_cents": 1000,
+      "taxes_rate": 10.0,
+      "units": "1.0",
+      "precise_unit_amount": "100.0",
+      "item": { "type": "subscription", "code": "premium", "name": "Premium", "invoice_display_name": null }
+    }
+  ],
+  "credits": [
+    {
+      "lago_id": "cred-0003",
+      "amount_cents": 2000,
+      "before_taxes": false,
+      "item": { "type": "credit_note", "code": "ACME-202609-007-CN001", "name": "Credit note" }
+    }
+  ]
+}

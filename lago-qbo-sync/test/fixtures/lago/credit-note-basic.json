@@ -1,0 +1,50 @@
+{
+  "_scenario": "Credit note with a taxed item (50.00 at 20%) and an untaxed item (20.00). Tax 10.00, total 80.00. Number is exactly 21 characters.",
+  "lago_id": "cn-0000-0000-0000-000000000001",
+  "sequential_id": 1,
+  "number": "ACME-202610-001-CN001",
+  "lago_invoice_id": "inv-0000-0000-0000-000000000001",
+  "invoice_number": "ACME-202610-001",
+  "issuing_date": "2026-10-23",
+  "credit_status": "available",
+  "refund_status": null,
+  "reason": "product_unsatisfactory",
+  "description": null,
+  "currency": "USD",
+  "total_amount_cents": 8000,
+  "taxes_amount_cents": 1000,
+  "sub_total_excluding_taxes_amount_cents": 7000,
+  "coupons_adjustment_amount_cents": 0,
+  "customer": {
+    "lago_id": "cus-0000-0000-0000-000000000001",
+    "external_id": "acme_001",
+    "name": "Acme Robotics",
+    "legal_name": "Acme Robotics Inc.",
+    "email": "billing@acme.example",
+    "currency": "USD"
+  },
+  "items": [
+    {
+      "lago_id": "cni-0001",
+      "amount_cents": 5000,
+      "amount_currency": "USD",
+      "fee": {
+        "lago_id": "fee-0001",
+        "amount_cents": 10000,
+        "taxes_rate": 20.0,
+        "item": { "type": "subscription", "code": "startup", "name": "Startup", "invoice_display_name": "Startup plan" }
+      }
+    },
+    {
+      "lago_id": "cni-0002",
+      "amount_cents": 2000,
+      "amount_currency": "USD",
+      "fee": {
+        "lago_id": "fee-0011",
+        "amount_cents": 2000,
+        "taxes_rate": 0,
+        "item": { "type": "add_on", "code": "onboarding_fee", "name": "Onboarding", "invoice_display_name": null }
+      }
+    }
+  ]
+}

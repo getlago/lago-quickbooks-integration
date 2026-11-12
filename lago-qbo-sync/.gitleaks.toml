@@ -1,0 +1,15 @@
+# Secret scanning for this folder (used by the CI workflow and the pre-commit hook).
+# This code lives in a PUBLIC repository: a secret that reaches a commit must be treated as leaked.
+title = "lago-qbo-sync"
+
+[extend]
+useDefault = true
+
+# Unit tests use fake credentials on purpose, to prove they never reach the logs. Every one of
+# them starts with "TEST-" (or is the documented exit-3 test token), so only those are allowed.
+[[allowlists]]
+description = "Fake credentials used by unit tests"
+regexes = [
+  '''TEST-[A-Za-z0-9._+/=-]+''',
+  '''AB11-invalid-refresh-token-for-exit3-test''',
+]
