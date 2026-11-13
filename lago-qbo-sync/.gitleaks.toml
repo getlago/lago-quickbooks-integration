@@ -12,4 +12,7 @@ description = "Fake credentials used by unit tests"
 regexes = [
   '''TEST-[A-Za-z0-9._+/=-]+''',
   '''AB11-invalid-refresh-token-for-exit3-test''',
+  # Retired fake from the first published commit, before the TEST- convention was applied there.
+  # Git history is public and immutable, so this exact value stays allowlisted; nothing else is.
+  '''lago_test_key_123456''',
 ]

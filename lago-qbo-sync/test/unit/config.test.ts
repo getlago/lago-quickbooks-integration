@@ -121,16 +121,16 @@ sync: { lookback_days: 3 }
 describe('loadEnv', () => {
   const outside = path.join(os.tmpdir(), 'lago-qbo-sync-test', 'qbo.token.json');
   const fullEnv = {
-    LAGO_API_KEY: 'lago_test_key_123456',
-    QBO_CLIENT_ID: 'client_id_123456',
-    QBO_CLIENT_SECRET: 'client_secret_abcdef',
+    LAGO_API_KEY: 'TEST-lago-key-123456',
+    QBO_CLIENT_ID: 'TEST-client-id-123456',
+    QBO_CLIENT_SECRET: 'TEST-client-secret-abcdef',
     TOKEN_STORE: 'file',
     TOKEN_STORE_PATH: outside,
   };
 
   it('returns only the requested keys', () => {
     const env = loadEnv(fullEnv, ['QBO_CLIENT_ID', 'TOKEN_STORE'], repoRoot);
-    expect(env).toEqual({ QBO_CLIENT_ID: 'client_id_123456', TOKEN_STORE: 'file' });
+    expect(env).toEqual({ QBO_CLIENT_ID: 'TEST-client-id-123456', TOKEN_STORE: 'file' });
   });
 
   it('reports missing keys by name without echoing any value', () => {

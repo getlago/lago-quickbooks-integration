@@ -281,7 +281,7 @@ Anything committed here is public and permanent, so a secret that reaches a comm
   ```bash
   git config core.hooksPath lago-qbo-sync/scripts/hooks
   ```
-- **CI scans every push and pull request** with gitleaks (pinned version, checksum-verified, full history) and runs the typecheck and unit tests. Test credentials are fake and start with `TEST-`; that's the only allowlisted pattern (`.gitleaks.toml`).
+- **CI scans every push and pull request** with gitleaks (pinned version, checksum-verified, full history) and runs the typecheck and unit tests. Test credentials are fake and start with `TEST-`; that's the only allowlisted pattern, plus one retired fake value from the first published commit (`.gitleaks.toml`).
 - **Paste only run summaries** in issues and pull requests. They're redacted by design; `--verbose` logs are redacted too, but read them before sharing.
 - **If a secret is ever pushed:** rotate it **first** (Lago API key in Lago; Intuit client secret in the Intuit portal; reconnect QuickBooks with `npm run auth`), then tell the repository admins. Rewriting history doesn't help once a secret is public: it may already be cloned or cached.
 

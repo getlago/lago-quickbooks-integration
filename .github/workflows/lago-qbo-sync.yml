@@ -25,7 +25,7 @@ jobs:
           echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum --check --strict
           tar -xzf gitleaks.tar.gz gitleaks
       - name: Scan the repository history
-        run: ./gitleaks git --config lago-qbo-sync/.gitleaks.toml --redact --no-banner --exit-code 1 .
+        run: ./gitleaks git --config lago-qbo-sync/.gitleaks.toml --redact --verbose --no-banner --exit-code 1 .
 
   test:
     runs-on: ubuntu-latest
