@@ -99,16 +99,16 @@ Nothing is written. The summary shows `would_create` counts for what's in the la
 
 1. Create the test scenarios in the Lago test org (coupon + tax, credit note + prepaid credits, apostrophe, long name, paid invoice, invoice to void). Running it without `--seed` first shows the plan without writing anything:
    ```bash
-   npm run seed -- --seed --confirm-billing-entity=<test-org billing entity code>
+   npm run seed -- --seed
    ```
-   The project owner gives you the billing entity code of the test org (the script refuses to write without it). Note the `manifest` path it prints, e.g. `.seed/ab12cd.json`.
+   It writes only if `LAGO_TEST_ORG_ID` in your `.env` is the test org's id (the project owner gives it to you): it checks the organization your API key belongs to. Note the `manifest` path it prints, e.g. `.seed/ab12cd.json`.
 2. Sync them into your sandbox:
    ```bash
    npm run sync
    ```
 3. Void the seeded invoice D in Lago, so the checklist can test voids:
    ```bash
-   npm run seed -- --void --manifest=.seed/<tag>.json --confirm-billing-entity=<test-org billing entity code>
+   npm run seed -- --void --manifest=.seed/<tag>.json
    ```
 4. Run the checklist. It does two real syncs into your sandbox (payments enabled in memory only) and prints PASS / FAIL / PARTIAL / SKIP for each brief §10 item:
    ```bash

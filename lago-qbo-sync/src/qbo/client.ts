@@ -7,7 +7,7 @@ import { classifyRead, classifyWrite, withRetry, type Classify } from '../http/r
 import type { Throttle } from '../http/throttle.js';
 import type { Logger } from '../log/logger.js';
 import type { Lookup } from '../reconcile/index.js';
-import { AuthError, parseFault, QboFaultError, QboLookupError, WritesDisabledError } from './errors.js';
+import { AuthError, isQboTimeoutFault, parseFault, QboFaultError, QboLookupError, WritesDisabledError } from './errors.js';
 import { qboUrl, type QboPath } from './query.js';
 import type {
   CompanyContext,
@@ -99,8 +99,11 @@ const preferencesSchema = z.looseObject({
   }),
 });
 
-/** A 5xx or no response: the write may or may not have been applied. */
-const isAmbiguous = (err: unknown) => err instanceof NetworkError || (err instanceof HttpError && err.status >= 500);
+/** A 5xx, no response, or QBO's "Request Timed Out" fault: the write may or may not have been applied. */
+const isAmbiguous = (err: unknown) => err instanceof NetworkError || (err instanceof HttpError && err.status >= 500) || isQboTimeoutFault(err);
+
+/** Reads: the usual transient errors, plus QBO's "Request Timed Out" 400. */
+const classifyQboRead: Classify = (err) => (isQboTimeoutFault(err) ? 'retry' : classifyRead(err));
 
 export class QboClient {
   readonly stats: QboStats = { calls: 0, byStatus: {} };
@@ -117,7 +120,7 @@ export class QboClient {
    * QueryResponse that has no rows for `entityKey`; anything else is an error (brief §6 bug #5).
    */
   async query<Row>(statement: string, entityKey: string): Promise<Lookup<Row>> {
-    const body = await this.call('GET', this.url({ kind: 'query' }, { query: statement }), undefined, classifyRead);
+    const body = await this.call('GET', this.url({ kind: 'query' }, { query: statement }), undefined, classifyQboRead);
     const response = (body as { QueryResponse?: unknown } | null)?.QueryResponse;
     if (response === null || typeof response !== 'object' || Array.isArray(response)) {
       throw new QboLookupError(`QBO query for ${entityKey} returned no QueryResponse; cannot tell whether it exists`);
@@ -130,8 +133,8 @@ export class QboClient {
 
   /** Country, home currency and multicurrency flag, read once per run. */
   async companyContext(): Promise<CompanyContext> {
-    const info = companyInfoSchema.safeParse(await this.call('GET', this.url({ kind: 'companyinfo' }), undefined, classifyRead));
-    const prefs = preferencesSchema.safeParse(await this.call('GET', this.url({ kind: 'preferences' }), undefined, classifyRead));
+    const info = companyInfoSchema.safeParse(await this.call('GET', this.url({ kind: 'companyinfo' }), undefined, classifyQboRead));
+    const prefs = preferencesSchema.safeParse(await this.call('GET', this.url({ kind: 'preferences' }), undefined, classifyQboRead));
     if (!info.success || !prefs.success) throw new QboLookupError('QBO company info or preferences had an unexpected format');
     const currency = prefs.data.Preferences.CurrencyPrefs;
     return {

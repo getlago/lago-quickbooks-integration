@@ -46,7 +46,11 @@ function basicAuth(clientId: string, clientSecret: string): string {
   return `Basic ${value}`;
 }
 
-/** Shared by refresh and code exchange: POST the form, retry transient failures, map errors. */
+/**
+ * Shared by refresh and code exchange: POST the form, map errors. Only the refresh grant is retried
+ * on transient failures. An authorization code is single-use: if a response is lost, a retry would
+ * only get `invalid_grant` and hide the real cause (review on PR #8), so the code exchange is sent once.
+ */
 async function requestTokens(
   opts: Pick<QboAuthOptions, 'clientId' | 'clientSecret' | 'fetch' | 'clock'>,
   form: Record<string, string>,
@@ -73,7 +77,7 @@ async function requestTokens(
           },
           () => clock.now(),
         ),
-      { classify: classifyRead, clock },
+      { classify: form.grant_type === 'refresh_token' ? classifyRead : () => 'stop', clock },
     );
   } catch (err) {
     if (err instanceof HttpError && (err.status === 400 || err.status === 401)) {

@@ -33,8 +33,13 @@ export function parseCallback(url: URL, expectedState: string): CallbackResult {
   return { ok: true, code, realmId };
 }
 
+/** HTML-escapes text placed in the callback page (the reason can carry Intuit's `error` parameter). */
+export function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+}
+
 const PAGE = (title: string, body: string) =>
-  `<!doctype html><meta charset="utf-8"><title>${title}</title><body style="font-family:system-ui;margin:3rem"><h1>${title}</h1><p>${body}</p></body>`;
+  `<!doctype html><meta charset="utf-8"><title>${escapeHtml(title)}</title><body style="font-family:system-ui;margin:3rem"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(body)}</p></body>`;
 
 /** Listens on 127.0.0.1 and ::1 (the browser may resolve "localhost" to either) for one /callback. */
 export function waitForCallback(port: number, expectedState: string, timeoutMs = CALLBACK_TIMEOUT_MS): Promise<{ code: string; realmId: string }> {

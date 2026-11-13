@@ -52,6 +52,9 @@ export class FakeQbo {
     } else if ((m = new RegExp(`^SELECT \\* FROM (Invoice|CreditMemo) WHERE DocNumber = ${LITERAL}$`).exec(statement))) {
       const wanted = unescape(m[2]!);
       rows = this.table(m[1]!).filter((r) => this.matches(r.DocNumber, wanted));
+    } else if ((m = /^SELECT \* FROM Customer WHERE Active IN \(true, false\) STARTPOSITION (\d+) MAXRESULTS 1000$/.exec(statement))) {
+      const start = Number(m[1]) - 1;
+      rows = this.customers.slice(start, start + 1000);
     } else if ((m = /^SELECT \* FROM Customer WHERE DisplayName IN \((.*)\) MAXRESULTS 1000$/.exec(statement))) {
       if (this.rejectInQueries) {
         this.hit('400');
@@ -152,7 +155,15 @@ export class FakeLago {
   constructor(
     public invoices: LagoInvoice[],
     public creditNotes: LagoCreditNote[],
-  ) {}
+  ) {
+    // Real Lago returns a customer's current data on every document. Fixtures are written
+    // independently, so give every document the first fixture's version of its customer.
+    const canonical = new Map<string, LagoInvoice['customer']>();
+    for (const doc of [...invoices, ...creditNotes]) {
+      if (!canonical.has(doc.customer.lago_id)) canonical.set(doc.customer.lago_id, structuredClone(doc.customer));
+      doc.customer = structuredClone(canonical.get(doc.customer.lago_id)!);
+    }
+  }
 
   async listInvoices(filter: InvoiceFilter): Promise<ListResult<LagoInvoiceSummary>> {
     this.stats.calls++;

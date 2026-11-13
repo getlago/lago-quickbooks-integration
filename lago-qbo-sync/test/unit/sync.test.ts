@@ -111,7 +111,8 @@ describe('runSync — goal §3: idempotent, amounts to the cent', () => {
   it('a changed customer is sparse-updated, then skipped on the next run', async () => {
     const { run, lago } = scenario();
     await run();
-    for (const cn of lago.creditNotes) if (cn.customer.lago_id.endsWith('01')) cn.customer.email = 'ap@acme.example';
+    // Lago returns the customer's current data on every document, so change it everywhere.
+    for (const doc of [...lago.invoices, ...lago.creditNotes]) if (doc.customer.lago_id.endsWith('01')) doc.customer.email = 'ap@acme.example';
     expect((await run()).counts.customer.updated).toBe(1);
     expect((await run()).counts.customer).toMatchObject({ updated: 0, skipped: 3 });
   });
@@ -401,5 +402,53 @@ describe('runSync — ownership and batched customers (code review 2026-11-12)',
     rejecting.rejectInQueries = true;
     const r = await scenario({ qbo: rejecting }).run();
     expect(r.counts.customer).toMatchObject({ created: 3, failed: 0 });
+  });
+});
+
+describe('runSync — review on PR #8: wide window, details on demand, renamed customers', () => {
+  it('creates an invoice issued weeks ago (late finalization or an outage) inside the 45-day window', async () => {
+    const late = invoiceFixture('invoice-coupon-tax');
+    Object.assign(late, { lago_id: 'inv-late', number: 'ACME-202609-077', issuing_date: '2026-09-20' });
+    const s = await scenario({ invoices: [late], creditNotes: [], sync: { lookback_days: 45 } }).run();
+    expect(s.counts.invoice.created).toBe(1);
+    expect(s.missing_in_qbo.items).toEqual([]);
+  });
+
+  it('a rerun reads no Lago details for documents already in QBO', async () => {
+    const { run, lago } = scenario();
+    await run();
+    const before = lago.stats.calls;
+    const second = await run();
+    expect(second.counts.invoice).toMatchObject({ created: 0, skipped: 5 });
+    // Only list calls remain: invoices + credit notes (sync), voided invoices (void pass),
+    // invoices + credit notes (reconciliation). No getInvoice / getCreditNote.
+    expect(lago.stats.calls - before).toBe(5);
+  });
+
+  it('renames the QBO customer when the Lago customer was renamed, instead of creating a duplicate', async () => {
+    const { run, qbo, lago } = scenario();
+    await run();
+    const before = qbo.customers.length;
+    for (const doc of [...lago.invoices, ...lago.creditNotes]) {
+      if (doc.customer.lago_id.endsWith('01')) doc.customer.name = 'Acme Robotics Group';
+    }
+    const extra = invoiceFixture('invoice-missing-optional');
+    Object.assign(extra, { lago_id: 'inv-new', number: 'ACME-202610-099', customer: structuredClone(lago.invoices[0]!.customer) });
+    lago.invoices.push(extra);
+    const s = await run();
+    expect(qbo.customers).toHaveLength(before);
+    expect(s.counts.customer).toMatchObject({ created: 0, updated: 1 });
+    const renamed = qbo.customers.find((c) => c.DisplayName === 'Acme Robotics Group');
+    expect(renamed?.Notes).toContain(lago.invoices[0]!.customer.lago_id);
+    expect(qbo.invoices.find((i) => i.DocNumber === 'ACME-202610-099')?.CustomerRef?.value).toBe(renamed?.Id);
+  });
+
+  it('never creates a customer only because an already-synced invoice lists it', async () => {
+    const { run, qbo } = scenario();
+    await run();
+    qbo.customers.splice(0, qbo.customers.length); // e.g. merged away in QBO by the bookkeeper
+    const s = await run();
+    expect(s.counts.customer.created).toBe(0);
+    expect(qbo.customers).toHaveLength(0);
   });
 });

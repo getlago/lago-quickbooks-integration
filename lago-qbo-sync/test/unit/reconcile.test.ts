@@ -105,13 +105,26 @@ describe('decideCustomer', () => {
 
   it('sparse-updates with Id and SyncToken when a field changed', () => {
     const d = decideCustomer(desired, 'cus-4', found(row({ PrimaryEmailAddr: { Address: 'old@oneil.example' } })));
-    expect(d).toEqual({ action: 'update', payload: { ...desired, Id: '55', SyncToken: '3', sparse: true } });
+    const { CurrencyRef: _c, ...noCurrency } = desired;
+    expect(d).toEqual({ action: 'update', payload: { ...noCurrency, Id: '55', SyncToken: '3', sparse: true } });
+  });
+
+  it('never compares or sends the currency of an existing customer (QBO ignores changes; sandbox)', () => {
+    expect(decideCustomer(desired, 'cus-4', found(row({ CurrencyRef: { value: 'EUR', name: 'Euro' } })))).toMatchObject({ action: 'skip' });
   });
 
   it('fails when the QBO customer belongs to another Lago customer (PLAN.md Q7)', () => {
     const d = decideCustomer(desired, 'cus-4', found(row({ Notes: 'Lago ID: cus-9\nExternal ID: other' })));
     expect(d).toMatchObject({ action: 'fail' });
     expect(d.action === 'fail' && d.reason).toContain('belongs to Lago customer cus-9, not cus-4');
+  });
+
+  it('renames instead of duplicating when only the Lago id matches (review on PR #8)', () => {
+    const old = row({ Id: '77', DisplayName: 'Old Name', SyncToken: '4' });
+    const { CurrencyRef: _c, ...noCurrency } = desired;
+    expect(decideCustomer(desired, 'cus-4', none, [old])).toEqual({ action: 'update', payload: { ...noCurrency, Id: '77', SyncToken: '4', sparse: true } });
+    expect(decideCustomer(desired, 'cus-4', none, [old, row({ Id: '78' })])).toMatchObject({ action: 'fail', reason: expect.stringContaining('Ids 77, 78') });
+    expect(decideCustomer(desired, 'cus-4', none, [])).toEqual({ action: 'create' });
   });
 
   it('adopts a same-name QBO customer that has no Lago ID in its Notes (n8n behavior)', () => {

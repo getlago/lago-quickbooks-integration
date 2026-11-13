@@ -116,7 +116,7 @@ Validated at startup; unknown keys are errors.
 | `lago.api_url` | `https://api.getlago.com/api/v1` | Lago Cloud only (`api.getlago.com` or `api.eu.getlago.com`), https. |
 | `lago.invoice_prefix_rules.allowed_pattern` | — | Anchored regex for numbers QBO lookups can match reliably, e.g. `^[A-Za-z0-9-]+$`. |
 | `lago.invoice_prefix_rules.max_docnumber_length` | — | ≤ 21 (QBO limit). |
-| `sync.lookback_days` | — (3 in the example) | Window, by `issuing_date`, for invoices and credit notes. |
+| `sync.lookback_days` | — (45 in the example) | Window, by `issuing_date`, for invoices and credit notes to create. Keep it wide: an invoice finalized after a long grace period keeps its original issue date, and an outage (expired token, stale lock, paused schedule) must be caught up. Documents already in QBO cost no Lago reads, so a wide window stays cheap. |
 | `sync.payment_lookback_days` | 45 | Window for paid invoices. |
 | `sync.void_lookback_days` | 45 | Window for voided invoices. |
 | `sync.reconcile_lookback_days` | 45 | Window for the read-only `missing_in_qbo` report. Must be ≥ `lookback_days`. |
@@ -146,8 +146,8 @@ The refresh token lives **only** in the token store, never in `.env`.
 2. Take the run lock (`<TOKEN_STORE_PATH>.lock`). If it is held, print `status: "locked"` and exit 0.
 3. Refresh the QBO access token. The rotated refresh token is written to the store **before** anything else; the access token stays in memory only.
 4. Read the company: it must be a US company; its home currency and multicurrency flag are kept for the currency check.
-5. Fetch Lago documents in the window. Lago's list endpoints don't include fees, so there's one detail GET per document.
-6. **Customers:** the distinct customers of those documents. Each is created, sparse-updated if changed, or skipped if unchanged.
+5. List Lago invoices and credit notes in the window, then check in batches which are already in QBO **as ours** (exactly one match whose note carries the Lago id). Those are counted as skipped. Lago details (fees, items) are read only for the others, one GET each.
+6. **Customers:** customers of the documents to create are created, sparse-updated if changed, or skipped if unchanged. Customers of every invoice in the window (included in the list response) are kept up to date and renamed when needed, but never created for that reason alone. A customer not found by name is looked up by the Lago id in QBO Notes before anything is created, so a rename in Lago renames the QBO customer instead of duplicating it.
 7. **Invoices, then credit notes:** existence is checked in batches of 50; each document is created or skipped.
 8. **Payments** (if `sync_payments`), then **voids** (if `sync_voids`).
 9. **Reconciliation** (read-only): Lago invoices and credit notes from the last `reconcile_lookback_days` that QBO doesn't have.
@@ -196,12 +196,12 @@ The refresh token lives **only** in the token store, never in `.env`.
 **Rate limits and retries**
 
 - **Rate limits by design.** One throttle per service evenly spaces request starts (no bursts), caps QBO at 450 starts per sliding minute, limits concurrency, and pauses everyone after a 429. A unit test pushes 1,000 calls at the highest allowed setting and checks no 1 s window has more than 8 and no 60 s window more than 450.
-- **Retries:** 5 attempts, 1 s base, ×2, with jitter, never less than `Retry-After`. 400s are never retried, and neither are network errors a retry can't fix (a refused redirect, TLS or DNS misconfiguration); only timeouts and socket errors are. A 401 triggers one token refresh and one retry; a second 401 is exit 3. The access token is read when a request leaves the queue, and a 401 on an already-replaced token reuses the newer one instead of asking Intuit again.
+- **Retries:** 5 attempts, 1 s base, ×2, with jitter, never less than `Retry-After`. 400s are never retried, and neither are network errors a retry can't fix (a refused redirect, TLS or DNS misconfiguration); only timeouts and socket errors are. QBO sometimes answers HTTP 400 with Fault code 10000, "Request Timed Out": reads retry it like a 5xx, and a create that gets it follows the unconfirmed-create path. A 401 triggers one token refresh and one retry; a second 401 is exit 3. The access token is read when a request leaves the queue, and a 401 on an already-replaced token reuses the newer one instead of asking Intuit again.
 
 **Run safety**
 
 - **One failing document never stops a run.** Only auth problems stop it (exit 3).
-- **Customer identity.** If the QBO customer with the same DisplayName has Notes naming a *different* Lago ID, the customer and its documents fail. Two Lago customers sharing a name must not post to one QBO customer.
+- **Customer identity.** If the QBO customer with the same DisplayName has Notes naming a *different* Lago ID, the customer and its documents fail. Two Lago customers sharing a name must not post to one QBO customer. When no customer has the name, the job looks for its Lago id in QBO Notes (one paged query per 1,000 QBO customers, inactive included, built once per run and only when needed). One match means a rename: the QBO customer is renamed. Several matches fail.
 - **Dry-run can't write.** The QBO client is built with writes disabled, and every write method throws before any network call.
 - **The Lago client is GET-only by construction**, and a test asserts it. The seed script has its own writer, limited to 13 endpoints and never used by the sync.
 
@@ -237,6 +237,9 @@ Changes made by this job on purpose:
 | A credit note whose coupon share makes its total differ from Lago **fails** | n8n has no line for it; waiting for the bookkeeper | Q4 (b) |
 | Wallet top-up invoices (`invoice_type: credit`) skipped and counted | out of scope (brief §11) | Q6 |
 | Customer identity check (§5) | prevents posting to the wrong customer | Q7 |
+| Customers matched by Lago id when the name changed; renamed in QBO, not duplicated | n8n matched by DisplayName only | review on PR #8 |
+| An existing QBO customer's currency is never compared or sent | QBO fixes it at creation and silently ignores changes, so every run "updated" such a customer (sandbox) | 2026-11-12 |
+| Default window 45 days, with Lago details read only for documents not yet in QBO | a 3-day window lost late-finalized invoices and anything during an outage | review on PR #8 |
 | US QBO companies only | `TAX`/`NON` line codes are US-only | Q8 |
 | Payment only when QBO balance = Lago total; skip at 0; otherwise fail | never overpay a partly settled invoice | Q10 |
 | Payment PrivateNote adds the Lago invoice id | traceability | Q10 |
@@ -256,8 +259,8 @@ Changes made by this job on purpose:
 ## 7. Known limitations
 
 - **No `updated_at` filter in Lago.** Each window filters on `issuing_date` only. A payment or void that happens after the window has passed is missed, so the payment and void windows are 45 days.
-- **Deferred payments resolve only if their invoice gets created.** If a paid invoice was issued before `lookback_days` and is not in QBO, its payment stays deferred, and the invoice is listed in `missing_in_qbo` (seen in the sandbox: `WP-202611-001`).
-- **Customers are synced only when they have a document in the window.** A Lago customer edit with no new document doesn't reach QBO.
+- **Deferred payments resolve only if their invoice gets created.** If a paid invoice was issued before `lookback_days` and is not in QBO, its payment stays deferred, and the invoice is listed in `missing_in_qbo`.
+- **Customer edits reach QBO only while the customer has an invoice in the window** (45 days by default). A customer with no invoice for longer than that keeps its old details in QBO until their next invoice.
 - **Inactive QBO customers aren't returned by lookups.** Creating a customer with the same name then fails with QBO's "Duplicate Name". Reactivate or rename the customer in QBO.
 - **Multicurrency.** Foreign-currency documents are sent without an exchange rate, as in n8n, so QBO applies its own daily rate to the home-currency figures. With multicurrency off, foreign-currency documents fail.
 - **US-only tax model.** Lines use `TAX`/`NON`; one `tax_code_id` carries Lago's exact total tax.
@@ -287,11 +290,11 @@ Anything committed here is public and permanent, so a secret that reaches a comm
 
 ## 9. Testing and sandbox evidence
 
-- **`npm test`**: 218 unit tests, no network. They cover:
+- **`npm test`**: 229 unit tests, no network. They cover:
   - every transform, using fixtures shaped like real Lago payloads (coupons, progressive billing, prepaid credits, applied credit notes, taxed and untaxed fees, multi-unit rounding, missing fields, long names, apostrophes, `[`, 22+ characters, empty invoices);
   - reconcile decisions, query escaping, the throttle and retry (in virtual time), the token store and lock, auth, both clients against a fake `fetch`;
   - end-to-end sync against in-memory QBO and Lago, and the CLI.
-- **`npm run seed`** creates the §10 scenarios in the Lago **test org**. Writing needs `--seed`, `environment: sandbox`, and `--confirm-billing-entity=<code of this org>`:
+- **`npm run seed`** creates the §10 scenarios in the Lago **test org**. Writing needs `--seed`, `environment: sandbox`, and `LAGO_TEST_ORG_ID` in `.env` equal to the organization the API key belongs to (checked with `GET /organizations`), so a production key can't pass by mistake:
   - customers with coupon + tax, a credit note plus prepaid credits, an apostrophe, a 120-character name;
   - a paid invoice, and an invoice to void later (`--void`);
   - `--bulk=500` creates 500 one-off invoices for the throughput test.
@@ -393,6 +396,24 @@ The job logs a warning when the refresh token has less than 14 days left. Reconn
    ```
 2. Run `npm run sync`. Idempotency makes the rerun safe.
 
+### Cutover from the n8n workflow
+
+Both can recognize each other's documents (same `Lago Invoice: <id>` note), so sequential runs never duplicate. But a webhook that fires while a sync runs can race it: both look up the same DocNumber, both see nothing, both create. So:
+
+1. **Turn off the Lago webhook** that feeds n8n (Lago › Developers › Webhooks), then deactivate the n8n workflow.
+2. **Note when it stopped.** Set `lookback_days` so the window reaches back before the last document n8n handled, e.g. `45`.
+3. **Dry-run, then sync:**
+   ```bash
+   npm run dry-run
+   ```
+   Check the `would_create` counts: they should be only what n8n missed or what arrived after it stopped.
+   ```bash
+   npm run sync
+   ```
+4. **Check `missing_in_qbo` is empty** (or only lists documents with a known reason), then schedule the job.
+
+Rolling back means the reverse: stop the schedule first, then turn the webhook and workflow back on.
+
 ### Production OAuth (out of scope)
 
 Intuit requires a public HTTPS redirect URI for production apps, so `npm run auth` refuses `environment: production`. To connect production, host the callback (any HTTPS endpoint that receives `code`, `state` and `realmId` and calls `exchangeAuthorizationCode` from `src/qbo/auth.ts`), or do the handshake once elsewhere and write the resulting record into the token store.
@@ -404,7 +425,8 @@ These need a decision from the customer or their bookkeeper; none is a code chan
 1. **Discount account.** The sandbox uses 86 (Discounts given). Production needs the account the bookkeeper wants coupons in. The n8n default `1` was an income account.
 2. **Payments.** `sync_payments` stays `false` until it's settled who books payments: Lago via this job, or Stripe via another integration. Booking them twice would double-count.
 3. **Credit notes with a coupon share** currently fail (Q4 b); the bookkeeper chooses how to book them.
-4. **Multicurrency.** Does the customer bill in more than one currency? If so, multicurrency must be on in QBO (it can't be turned off again), and the bookkeeper must accept QBO's exchange rate (§7).
-5. **Lago numbering prefix.** Keep it to letters, digits and `-`, short enough that credit notes (`…-CN001`) stay within 21 characters. Run `check-config` against production first.
-6. **A separate Intuit production app**, connected once (see "Production OAuth" above).
-7. **First production run:** `npm run sync` without `--apply` (a dry-run), review the summary, then `npm run sync -- --apply`.
+4. **Applied credit notes may reduce the books twice** (inherited from n8n and MAPPING.md). A Lago credit note is synced as a credit memo, and when its credit is later used on an invoice, that invoice also gets a negative "Credit note credits" line. In QBO that's two reductions for one credit: the credit memo's open credit stays next to an already-reduced invoice, or QBO auto-applies it and the balance drops below the Lago total (which then fails the payment pass). The bookkeeper picks one treatment, e.g. book the negative line against a clearing account, or apply the credit memo to the invoice instead of the negative line. **Required before `environment: production`.**
+5. **Multicurrency.** Does the customer bill in more than one currency? If so, multicurrency must be on in QBO (it can't be turned off again), and the bookkeeper must accept QBO's exchange rate (§7).
+6. **Lago numbering prefix.** Keep it to letters, digits and `-`, short enough that credit notes (`…-CN001`) stay within 21 characters. Run `check-config` against production first.
+7. **A separate Intuit production app**, connected once (see "Production OAuth" above).
+8. **First production run:** `npm run sync` without `--apply` (a dry-run), review the summary, then `npm run sync -- --apply`.

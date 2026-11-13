@@ -83,6 +83,8 @@ export const lagoInvoiceSummarySchema = z.looseObject({
   payment_status: optionalText,
   invoice_type: z.string(),
   total_amount_cents: cents,
+  /** Included in the list response; used to keep existing QBO customers up to date. */
+  customer: lagoCustomerSchema.optional(),
 });
 export type LagoInvoiceSummary = z.infer<typeof lagoInvoiceSummarySchema>;
 

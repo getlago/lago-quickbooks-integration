@@ -64,6 +64,17 @@ export function parseFault(body: unknown): { type?: string; errors: FaultDetail[
   return { ...(fault.type ? { type: String(fault.type) } : {}), errors };
 }
 
+/**
+ * QBO sometimes answers HTTP 400 with Fault code 10000, "Request Timed Out / Please wait and try
+ * again" (seen in the sandbox on 2026-11-12). It is temporary despite the 400: reads retry it, and
+ * a write that gets it is treated as unconfirmed (it may have been applied).
+ */
+export function isQboTimeoutFault(err: unknown): boolean {
+  if (!(err instanceof HttpError || err instanceof QboFaultError)) return false;
+  if (err instanceof HttpError && err.service !== 'qbo') return false;
+  return parseFault(err.body)?.errors.some((e) => e.code === '10000') ?? false;
+}
+
 /** One line for the run summary: what QBO said, in its own words. */
 export function describeQboError(err: unknown): string {
   if (err instanceof HttpError && err.service !== 'qbo') return `${err.service} HTTP ${err.status} on ${err.path}`;

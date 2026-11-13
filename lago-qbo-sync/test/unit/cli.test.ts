@@ -226,3 +226,22 @@ describe('runCli end to end (offline)', () => {
     expect(fetch.calls).toEqual([]);
   });
 });
+
+describe('review fixes on PR #8 (auth)', () => {
+  it('escapes HTML in the callback page text', async () => {
+    const { escapeHtml } = await import('../../src/cli/commands/auth.js');
+    expect(escapeHtml(`<script>alert("x")</script> & 'y'`)).toBe('&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;y&#39;');
+  });
+
+  it('shows an Intuit error parameter escaped on the failure page', async () => {
+    const port = 40000 + Math.floor(Math.random() * 20000);
+    const waiting = waitForCallback(port, 'st', 5000).catch((e: unknown) => e);
+    await new Promise((r) => setTimeout(r, 50));
+    const res = await fetch(`http://127.0.0.1:${port}/callback?state=st&error=${encodeURIComponent('<img src=x onerror=alert(1)>')}`);
+    const html = await res.text();
+    expect(res.status).toBe(400);
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    await waiting;
+  });
+});

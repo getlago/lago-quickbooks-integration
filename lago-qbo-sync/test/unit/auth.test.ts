@@ -144,6 +144,24 @@ describe('cli auth helpers', () => {
     );
   });
 
+  it('never retries the single-use authorization code exchange (review on PR #8)', async () => {
+    const fetch = fakeFetch([json(503, {}), tokens()]);
+    await expect(
+      exchangeAuthorizationCode({
+        store: memoryStore(null),
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        realmId: REALM,
+        fetch,
+        clock: instantClock(),
+        code: 'TEST-auth-code',
+        redirectUri: 'http://localhost:8000/callback',
+        callbackRealmId: REALM,
+      }),
+    ).rejects.toThrow(/did not answer the authorization code/);
+    expect(fetch.calls).toHaveLength(1);
+  });
+
   it('refuses to save a token for a different company than mappings.yaml', async () => {
     const fetch = fakeFetch([]);
     const store = memoryStore(null);

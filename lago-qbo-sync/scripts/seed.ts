@@ -19,9 +19,10 @@ import { registerSecret } from '../src/log/redact.js';
  *
  * Safety:
  *  - Without --seed it only prints what it would create (no Lago request at all).
- *  - With --seed it refuses unless mappings.yaml says `environment: sandbox` AND
- *    --confirm-billing-entity=<code> names a billing entity of the org the key belongs to
- *    (proof the operator looked at which org this is).
+ *  - With --seed (or --void) it refuses unless mappings.yaml says `environment: sandbox` AND the
+ *    organization the API key belongs to (GET /organizations → lago_id) is exactly the one named
+ *    in LAGO_TEST_ORG_ID. The check is tied to the Lago org itself, not to anything typed on the
+ *    command line, so a production key can never pass it by mistake (review on PR #8).
  *  - Writes go only to a fixed list of endpoints; nothing is ever deleted.
  *  - Every code carries a `qa-<tag>` marker; every created id is written to .seed/<tag>.json.
  * Payloads follow the Lago API reference and the team's lago-api-testing skill.
@@ -31,7 +32,6 @@ import { registerSecret } from '../src/log/redact.js';
 
 export interface SeedArgs {
   mode: 'plan' | 'seed' | 'void';
-  confirmBillingEntity?: string;
   manifest?: string;
   /** §10 throughput test: create this many one-off invoices instead of the scenario set. */
   bulk?: number;
@@ -42,13 +42,11 @@ export const BULK_CUSTOMERS = 25;
 
 export function parseSeedArgs(argv: readonly string[]): SeedArgs | { error: string } {
   let mode: SeedArgs['mode'] = 'plan';
-  let confirmBillingEntity: string | undefined;
   let manifest: string | undefined;
   let bulk: number | undefined;
   for (const arg of argv) {
     if (arg === '--seed') mode = 'seed';
     else if (arg === '--void') mode = 'void';
-    else if (arg.startsWith('--confirm-billing-entity=')) confirmBillingEntity = arg.split('=')[1];
     else if (arg.startsWith('--manifest=')) manifest = arg.split('=')[1];
     else if (arg.startsWith('--bulk=')) {
       bulk = Number(arg.split('=')[1]);
@@ -59,7 +57,6 @@ export function parseSeedArgs(argv: readonly string[]): SeedArgs | { error: stri
   if (mode === 'void' && bulk) return { error: '--bulk cannot be combined with --void' };
   return {
     mode,
-    ...(confirmBillingEntity ? { confirmBillingEntity } : {}),
     ...(manifest ? { manifest } : {}),
     ...(bulk ? { bulk } : {}),
   };
@@ -68,15 +65,17 @@ export function parseSeedArgs(argv: readonly string[]): SeedArgs | { error: stri
 /** Returns why writing is refused, or null when every guard passes. */
 export function writeRefusal(args: {
   environment: string;
-  confirmBillingEntity: string | undefined;
-  billingEntityCodes: readonly string[];
+  /** LAGO_TEST_ORG_ID from the environment: the one organization seeding may write to. */
+  expectedOrgId: string | undefined;
+  /** The organization the API key belongs to, from GET /organizations. */
+  actualOrg: { lago_id: string; name?: string | null };
 }): string | null {
   if (args.environment !== 'sandbox') return 'mappings.yaml environment is not "sandbox": seeding is for the test org only';
-  if (!args.confirmBillingEntity) {
-    return `add --confirm-billing-entity=<code> naming one of this org's billing entities (${args.billingEntityCodes.join(', ')}) to confirm it is the test org`;
+  if (!args.expectedOrgId) {
+    return `set LAGO_TEST_ORG_ID in .env to the test organization's id; this key belongs to "${args.actualOrg.name ?? '?'}" (${args.actualOrg.lago_id})`;
   }
-  if (!args.billingEntityCodes.includes(args.confirmBillingEntity)) {
-    return `billing entity "${args.confirmBillingEntity}" is not in the org this API key belongs to (${args.billingEntityCodes.join(', ')}); refusing`;
+  if (args.actualOrg.lago_id !== args.expectedOrgId) {
+    return `this API key belongs to organization "${args.actualOrg.name ?? '?'}" (${args.actualOrg.lago_id}), not LAGO_TEST_ORG_ID (${args.expectedOrgId}); refusing`;
   }
   return null;
 }
@@ -323,7 +322,7 @@ async function main(): Promise<number> {
   const log = createLogger({});
   const args = parseSeedArgs(process.argv.slice(2));
   if ('error' in args) {
-    process.stderr.write(`${args.error}\nUsage: npm run seed [-- --seed --confirm-billing-entity=<code>] [-- --void --manifest=.seed/<tag>.json --confirm-billing-entity=<code>]\n`);
+    process.stderr.write(`${args.error}\nUsage: npm run seed [-- --seed [--bulk=N]] [-- --void --manifest=.seed/<tag>.json]  (writes need LAGO_TEST_ORG_ID)\n`);
     return 2;
   }
   const { mappings, env } = loadConfig({ env: process.env, requiredEnv: ['LAGO_API_KEY'], repoRoot });
@@ -334,14 +333,19 @@ async function main(): Promise<number> {
   if (args.mode === 'plan') {
     const tag = randomBytes(3).toString('hex');
     const lines = args.bulk ? describeBulkPlan(tag, args.bulk) : describePlan(seedNames(tag));
-    const how = `npm run seed -- --seed${args.bulk ? ` --bulk=${args.bulk}` : ''} --confirm-billing-entity=<code>`;
+    const how = `npm run seed -- --seed${args.bulk ? ` --bulk=${args.bulk}` : ''}  (needs LAGO_TEST_ORG_ID in .env)`;
     process.stdout.write([target, 'PLAN ONLY: nothing is sent to Lago.', '', ...lines, '', `To create it: ${how}`, ''].join('\n'));
     return 0;
   }
 
   const w = new SeedWriter(base, env.LAGO_API_KEY, (u, i) => fetch(u, i), createThrottle({ ratePerSecond: 5, maxConcurrent: 1 }), log);
-  const entities = ((await w.get('/billing_entities')) as { billing_entities: Array<{ code: string }> }).billing_entities.map((e) => e.code);
-  const refusal = writeRefusal({ environment: mappings.environment, confirmBillingEntity: args.confirmBillingEntity, billingEntityCodes: entities });
+  const org = ((await w.get('/organizations')) as { organization?: { lago_id?: unknown; name?: unknown } }).organization;
+  if (!org || typeof org.lago_id !== 'string') throw new Error('GET /organizations returned no organization lago_id; refusing to write');
+  const refusal = writeRefusal({
+    environment: mappings.environment,
+    expectedOrgId: process.env.LAGO_TEST_ORG_ID?.trim() || undefined,
+    actualOrg: { lago_id: org.lago_id, name: typeof org.name === 'string' ? org.name : null },
+  });
   if (refusal) {
     process.stderr.write(`${target}\nRefusing to write: ${refusal}\n`);
     return 2;

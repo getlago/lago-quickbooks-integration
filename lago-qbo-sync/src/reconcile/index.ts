@@ -84,6 +84,11 @@ export function decideDocument(
 
 const LAGO_ID_IN_NOTES = /Lago ID:\s*(\S+)/;
 
+/** The Lago customer id this job wrote into a QBO customer's Notes (MAPPING.md "Notes Format"). */
+export function lagoIdFromNotes(notes: string | undefined): string | undefined {
+  return LAGO_ID_IN_NOTES.exec(notes ?? '')?.[1];
+}
+
 /** Normalizes values the way QBO may store them, for "unchanged?" comparison. */
 function normalize(value: unknown): unknown {
   return typeof value === 'string' ? value.replace(/\r\n/g, '\n') : value;
@@ -108,26 +113,50 @@ function sameAsExisting(desired: object, existing: Record<string, unknown> | und
  * sparse-update if present. An unchanged customer is skipped so a rerun writes nothing (PLAN.md §4.5).
  * A customer whose QBO Notes name a different Lago customer fails instead of receiving another
  * customer's documents (PLAN.md Q7).
+ *
+ * When the name finds nothing, `byLagoId` (QBO customers whose Notes carry this Lago id) decides:
+ * one match means the customer was renamed in Lago, so it is updated (renamed) instead of duplicated
+ * (review on PR #8); several matches fail; none means a new customer.
  */
 export function decideCustomer(
   desired: QboCustomerPayload,
   lagoId: string,
   lookup: Lookup<QboCustomerRow>,
+  byLagoId: readonly QboCustomerRow[] = [],
 ): Decision<QboCustomerUpdate> {
-  if (lookup.kind === 'none') return { action: 'create' };
+  if (lookup.kind === 'none') {
+    if (byLagoId.length > 1) {
+      return {
+        action: 'fail',
+        reason: `Customer "${desired.DisplayName}": ${byLagoId.length} QBO customers carry Lago id ${lagoId} (Ids ${byLagoId.map((r) => r.Id).join(', ')}); merge them in QBO`,
+      };
+    }
+    const renamed = byLagoId[0];
+    if (!renamed) return { action: 'create' };
+    return { action: 'update', payload: { ...withoutCurrency(desired), Id: renamed.Id, SyncToken: renamed.SyncToken, sparse: true } };
+  }
   if (lookup.rows.length > 1) {
     return { action: 'fail', reason: `Customer "${desired.DisplayName}": ${lookup.rows.length} QBO customers share this DisplayName` };
   }
   const row = lookup.rows[0]!;
-  const linkedLagoId = LAGO_ID_IN_NOTES.exec(row.Notes ?? '')?.[1];
+  const linkedLagoId = lagoIdFromNotes(row.Notes);
   if (linkedLagoId && linkedLagoId !== lagoId) {
     return {
       action: 'fail',
       reason: `Customer "${desired.DisplayName}": QBO customer ${row.Id} belongs to Lago customer ${linkedLagoId}, not ${lagoId}; two Lago customers share this name, rename one in Lago or QBO`,
     };
   }
-  if (sameAsExisting(desired, row)) return { action: 'skip', reason: `unchanged (QBO Id ${row.Id})` };
-  return { action: 'update', payload: { ...desired, Id: row.Id, SyncToken: row.SyncToken, sparse: true } };
+  // QBO fixes a customer's currency at creation and silently ignores changes, so it is never
+  // compared or sent for an existing customer (otherwise every run "updates" it, seen in the sandbox).
+  // A real mismatch surfaces on that customer's documents as QBO's own currency error.
+  const comparable = withoutCurrency(desired);
+  if (sameAsExisting(comparable, row)) return { action: 'skip', reason: `unchanged (QBO Id ${row.Id})` };
+  return { action: 'update', payload: { ...comparable, Id: row.Id, SyncToken: row.SyncToken, sparse: true } };
+}
+
+function withoutCurrency(desired: QboCustomerPayload): Omit<QboCustomerPayload, 'CurrencyRef'> {
+  const { CurrencyRef: _currency, ...rest } = desired;
+  return rest;
 }
 
 function balanceCents(row: QboTxnRow): number | null {

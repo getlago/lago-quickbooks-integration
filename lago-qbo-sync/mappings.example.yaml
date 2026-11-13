@@ -20,7 +20,7 @@ lago:
     max_docnumber_length: 21      # QBO DocNumber limit
 
 sync:
-  lookback_days: 3                # invoices and credit notes, by issuing_date
+  lookback_days: 45               # invoices and credit notes, by issuing_date (wide on purpose: late finalization, outages)
   payment_lookback_days: 45
   void_lookback_days: 45
   reconcile_lookback_days: 45     # read-only "missing_in_qbo" report

@@ -104,6 +104,22 @@ describe('QboClient.query', () => {
     expect(client.stats).toEqual({ calls: 3, byStatus: { '429': 1, '503': 1, '200': 1 } });
   });
 
+  it('retries QBO\'s "Request Timed Out" 400 (Fault code 10000) on reads (seen in the sandbox)', async () => {
+    const timedOut = json(400, fault('Request Timed Out', 'Please wait and try again.', '10000'));
+    const { client, fetch } = setup([timedOut, json(200, { QueryResponse: {} })]);
+    expect(await client.query('SELECT 1', 'Invoice')).toEqual({ kind: 'none' });
+    expect(fetch.calls).toHaveLength(2);
+  });
+
+  it('treats a "Request Timed Out" 400 on a create as unconfirmed: lookup, never resend', async () => {
+    const timedOut = json(400, fault('Request Timed Out', 'Please wait and try again.', '10000'));
+    const invoice = { DocNumber: 'A-1', TxnDate: '2026-10-20', CurrencyRef: { value: 'USD' }, Line: [], PrivateNote: 'p', CustomerMemo: { value: 'm' } };
+    const { client, fetch } = setup([timedOut]);
+    const r = await client.create('invoice', invoice, async () => ({ Id: '9', SyncToken: '0' }));
+    expect(r).toEqual({ row: { Id: '9', SyncToken: '0' }, recovered: true });
+    expect(fetch.calls).toHaveLength(1);
+  });
+
   it('gives up after 5 attempts on persistent 5xx', async () => {
     const { client, fetch } = setup(Array.from({ length: 5 }, () => json(500, {})));
     await expect(client.query('SELECT 1', 'Invoice')).rejects.toBeInstanceOf(HttpError);

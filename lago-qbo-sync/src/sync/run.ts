@@ -8,8 +8,10 @@ import type { QboClient } from '../qbo/client.js';
 import { AuthError, describeQboError, WritesDisabledError } from '../qbo/errors.js';
 import {
   customerByDisplayName,
+  allCustomersPage,
   customersByDisplayNames,
   QUERY_IN_MAX,
+  QUERY_MAX_RESULTS,
   txnByDocNumber,
   txnsByDocNumbers,
   type TxnEntity,
@@ -22,6 +24,7 @@ import {
   decideDocument,
   decidePayment,
   decideVoid,
+  lagoIdFromNotes,
   ownedBy,
   type Lookup,
 } from '../reconcile/index.js';
@@ -113,6 +116,7 @@ class SyncRun {
   private readonly m: Mappings;
   private readonly apply: boolean;
   private readonly customers = new Map<string, CustomerResolution>();
+  private lagoIdIndex: Promise<Map<string, QboCustomerRow[]>> | null = null;
   /** Batched existence answers, keyed "Invoice:<number>" / "CreditMemo:<number>". */
   private readonly existing = new Map<string, Lookup<QboTxnRow>>();
 
@@ -137,8 +141,20 @@ class SyncRun {
       reconcile_issued_from: windowStart(now, sync.reconcile_lookback_days),
     };
 
-    const fetched = await this.fetchInvoices(issuedFrom);
-    const creditNotes = await this.fetchCreditNotes(issuedFrom);
+    // Review on PR #8: the window must be wide (default 45 days) so an invoice finalized late (a
+    // grace period with keep_anchor issuing dates) or issued during an outage is still created.
+    // To keep that cheap, the cheap list calls and the batched QBO existence check come first, and
+    // Lago details are read only for documents that are not already in QBO as ours.
+    const invoiceList = await this.listInvoicesInScope(issuedFrom);
+    const creditNoteList = await this.listOrFail('credit_note', () => this.deps.lago.listCreditNotes({ issuing_date_from: issuedFrom }));
+    await this.prefetchExisting('Invoice', invoiceList.map((i) => i.number));
+    await this.prefetchExisting('CreditMemo', creditNoteList.map((c) => c.number));
+    const fetched = await this.fetchDetails('invoice', this.notYetSynced('invoice', 'Invoice', invoiceList), (id) =>
+      this.deps.lago.getInvoice(id),
+    );
+    const creditNotes = await this.fetchDetails('credit_note', this.notYetSynced('credit_note', 'CreditMemo', creditNoteList), (id) =>
+      this.deps.lago.getCreditNote(id),
+    );
 
     // Empty invoices are reported, not synced; their customers are not created for them alone.
     const invoices = fetched.filter((inv) => {
@@ -147,10 +163,11 @@ class SyncRun {
       return false;
     });
 
-    await this.customerPass([...invoices.map((i) => i.customer), ...creditNotes.map((c) => c.customer)]);
-    await this.prefetchExisting('Invoice', invoices.map((i) => i.number));
+    await this.customerPass(
+      [...invoices.map((i) => i.customer), ...creditNotes.map((c) => c.customer)],
+      invoiceList.flatMap((i) => (i.customer ? [i.customer] : [])),
+    );
     await this.each(invoices, (inv) => this.invoiceDoc(inv));
-    await this.prefetchExisting('CreditMemo', creditNotes.map((c) => c.number));
     await this.each(creditNotes, (cn) => this.creditNoteDoc(cn));
     if (sync.sync_payments) await this.paymentPass(this.sb.windows.payments_issued_from!);
     if (sync.sync_voids) await this.voidPass(this.sb.windows.voids_issued_from!);
@@ -167,19 +184,27 @@ class SyncRun {
 
   // ---- fetch ---------------------------------------------------------------------------------
 
-  private async fetchInvoices(from: string): Promise<LagoInvoice[]> {
+  private async listInvoicesInScope(from: string): Promise<LagoInvoiceSummary[]> {
     const list = await this.listOrFail('invoice', () => this.deps.lago.listInvoices({ status: 'finalized', issuing_date_from: from }));
-    const inScope = list.filter((summary) => {
+    return list.filter((summary) => {
       if (!isOutOfScopeInvoice(summary)) return true;
       this.sb.walletTopups++;
       return false;
     });
-    return this.fetchDetails('invoice', inScope, (id) => this.deps.lago.getInvoice(id));
   }
 
-  private async fetchCreditNotes(from: string): Promise<LagoCreditNote[]> {
-    const list = await this.listOrFail('credit_note', () => this.deps.lago.listCreditNotes({ issuing_date_from: from }));
-    return this.fetchDetails('credit_note', list, (id) => this.deps.lago.getCreditNote(id));
+  /**
+   * Documents the batched existence check already found in QBO as ours (exactly one match, carrying
+   * the Lago id) are counted as skipped here, without reading their Lago details. Everything else
+   * (absent, foreign, duplicated, or not batch-answerable) goes through the full per-document path.
+   */
+  private notYetSynced<S extends { lago_id: string; number: string }>(entity: 'invoice' | 'credit_note', qboEntity: TxnEntity, list: readonly S[]): S[] {
+    return list.filter((doc) => {
+      const known = this.existing.get(`${qboEntity}:${doc.number}`);
+      const synced = known?.kind === 'found' && known.rows.length === 1 && ownedBy(known.rows[0]!, doc.lago_id);
+      if (synced) this.sb.record(entity, 'skipped');
+      return !synced;
+    });
   }
 
   /**
@@ -225,8 +250,14 @@ class SyncRun {
 
   // ---- customers -----------------------------------------------------------------------------
 
-  private async customerPass(all: LagoCustomer[]): Promise<void> {
-    const unique = [...new Map(all.map((c) => [c.lago_id, c])).values()];
+  /**
+   * `needed`: customers of documents this run will create; they are created if absent.
+   * `refreshOnly`: customers of every invoice in the window (from the list call); they are kept up
+   * to date and renamed when they already exist in QBO, but never created for that reason alone.
+   */
+  private async customerPass(needed: LagoCustomer[], refreshOnly: LagoCustomer[]): Promise<void> {
+    const neededIds = new Set(needed.map((c) => c.lago_id));
+    const unique = [...new Map([...refreshOnly, ...needed].map((c) => [c.lago_id, c])).values()];
     const known = await this.prefetchCustomers(unique);
     await this.each(unique, async (c) => {
       const note = { lago_number: c.external_id, lago_id: c.lago_id };
@@ -245,7 +276,10 @@ class SyncRun {
         const lookupCustomer = () => this.deps.qbo.query<QboCustomerRow>(customerByDisplayName(desired.DisplayName), 'Customer');
         // Batched answer when the prefetch could give one with certainty, else the single lookup.
         const found = known.get(desired.DisplayName) ?? (await lookupCustomer());
-        const decision = decideCustomer(desired, c.lago_id, found);
+        // Not found by name: maybe renamed in Lago. Look for its Lago id in QBO Notes before creating.
+        const byLagoId = found.kind === 'none' ? ((await this.customersByLagoId()).get(c.lago_id) ?? []) : [];
+        const decision = decideCustomer(desired, c.lago_id, found, byLagoId);
+        if (decision.action === 'create' && !neededIds.has(c.lago_id)) return; // no document needs it
         switch (decision.action) {
           case 'skip':
             this.customers.set(c.lago_id, { ok: true, qboId: found.kind === 'found' ? found.rows[0]!.Id : null });
@@ -367,6 +401,26 @@ class SyncRun {
     ];
     const answered = await this.batchLookup(batchable, (chunk) => txnsByDocNumbers(entity, chunk), entity, (r: QboTxnRow) => r.DocNumber);
     for (const [n, lookup] of answered) this.existing.set(`${entity}:${n}`, lookup);
+  }
+
+  /**
+   * QBO customers indexed by the Lago id in their Notes, built once per run and only when a customer
+   * is not found by name (one query per 1,000 QBO customers, inactive ones included).
+   */
+  private customersByLagoId(): Promise<Map<string, QboCustomerRow[]>> {
+    this.lagoIdIndex ??= (async () => {
+      const index = new Map<string, QboCustomerRow[]>();
+      for (let start = 1; ; start += QUERY_MAX_RESULTS) {
+        const page = await this.deps.qbo.query<QboCustomerRow>(allCustomersPage(start), 'Customer');
+        const rows = page.kind === 'found' ? page.rows : [];
+        for (const row of rows) {
+          const id = lagoIdFromNotes(row.Notes);
+          if (id) index.set(id, [...(index.get(id) ?? []), row]);
+        }
+        if (rows.length < QUERY_MAX_RESULTS) return index;
+      }
+    })();
+    return this.lagoIdIndex;
   }
 
   /** Customers by DisplayName, batched like documents; names that cannot be quoted get single lookups. */

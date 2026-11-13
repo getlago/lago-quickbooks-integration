@@ -64,6 +64,15 @@ export function txnsByDocNumbers(entity: TxnEntity, docNumbers: readonly string[
   return `SELECT * FROM ${entity} WHERE DocNumber IN ${inList(docNumbers)} MAXRESULTS ${QUERY_MAX_RESULTS}`;
 }
 
+/**
+ * One page of every customer, inactive ones included (`Active IN (true, false)`), to find a customer
+ * by the Lago id in its Notes when its name changed in Lago. Pages of QUERY_MAX_RESULTS rows.
+ */
+export function allCustomersPage(startPosition: number): string {
+  if (!Number.isInteger(startPosition) || startPosition < 1) throw new QueryBuildError('STARTPOSITION must be a positive integer');
+  return `SELECT * FROM Customer WHERE Active IN (true, false) STARTPOSITION ${startPosition} MAXRESULTS ${QUERY_MAX_RESULTS}`;
+}
+
 /** Batched customer lookup; if QBO rejects `IN` on DisplayName, sync falls back to single lookups. */
 export function customersByDisplayNames(displayNames: readonly string[]): string {
   return `SELECT * FROM Customer WHERE DisplayName IN ${inList(displayNames)} MAXRESULTS ${QUERY_MAX_RESULTS}`;

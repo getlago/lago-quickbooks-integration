@@ -12,7 +12,7 @@ import {
 describe('bulk seed (§10 throughput)', () => {
   it('parses --bulk within bounds and refuses it with --void', () => {
     expect(parseSeedArgs(['--bulk=500'])).toEqual({ mode: 'plan', bulk: 500 });
-    expect(parseSeedArgs(['--seed', '--bulk=500', '--confirm-billing-entity=x'])).toEqual({ mode: 'seed', bulk: 500, confirmBillingEntity: 'x' });
+    expect(parseSeedArgs(['--seed', '--bulk=500'])).toEqual({ mode: 'seed', bulk: 500 });
     expect(parseSeedArgs(['--bulk=0'])).toMatchObject({ error: expect.stringContaining('1 to 1000') });
     expect(parseSeedArgs(['--bulk=abc'])).toMatchObject({ error: expect.any(String) });
     expect(parseSeedArgs(['--void', '--manifest=m.json', '--bulk=5'])).toMatchObject({ error: expect.stringContaining('--void') });
@@ -33,17 +33,19 @@ describe('bulk seed (§10 throughput)', () => {
 describe('seed script guards (PLAN.md Q11: test org only)', () => {
   it('defaults to plan-only; --seed and --void are explicit', () => {
     expect(parseSeedArgs([])).toEqual({ mode: 'plan' });
-    expect(parseSeedArgs(['--seed', '--confirm-billing-entity=acme'])).toEqual({ mode: 'seed', confirmBillingEntity: 'acme' });
+    expect(parseSeedArgs(['--seed'])).toEqual({ mode: 'seed' });
+    expect(parseSeedArgs(['--seed', '--confirm-billing-entity=acme'])).toEqual({ error: 'Unknown option: --confirm-billing-entity=acme' });
     expect(parseSeedArgs(['--void'])).toEqual({ error: '--void needs --manifest=.seed/<tag>.json' });
     expect(parseSeedArgs(['--force'])).toEqual({ error: 'Unknown option: --force' });
   });
 
-  it('refuses unless sandbox AND a billing entity of this org is named', () => {
-    const codes = ['acme_test', 'neo_de'];
-    expect(writeRefusal({ environment: 'production', confirmBillingEntity: 'acme_test', billingEntityCodes: codes })).toMatch(/not "sandbox"/);
-    expect(writeRefusal({ environment: 'sandbox', confirmBillingEntity: undefined, billingEntityCodes: codes })).toMatch(/acme_test, neo_de/);
-    expect(writeRefusal({ environment: 'sandbox', confirmBillingEntity: 'prod_entity', billingEntityCodes: codes })).toMatch(/refusing/);
-    expect(writeRefusal({ environment: 'sandbox', confirmBillingEntity: 'neo_de', billingEntityCodes: codes })).toBeNull();
+  it('refuses unless sandbox AND the key belongs to LAGO_TEST_ORG_ID (review on PR #8)', () => {
+    const test = { lago_id: 'org-test-0001', name: 'Test org' };
+    const prod = { lago_id: 'org-prod-0001', name: 'Production org' };
+    expect(writeRefusal({ environment: 'production', expectedOrgId: 'org-test-0001', actualOrg: test })).toMatch(/not "sandbox"/);
+    expect(writeRefusal({ environment: 'sandbox', expectedOrgId: undefined, actualOrg: test })).toMatch(/set LAGO_TEST_ORG_ID/);
+    expect(writeRefusal({ environment: 'sandbox', expectedOrgId: 'org-test-0001', actualOrg: prod })).toMatch(/belongs to organization "Production org".*refusing/);
+    expect(writeRefusal({ environment: 'sandbox', expectedOrgId: 'org-test-0001', actualOrg: test })).toBeNull();
   });
 
   it('only writes to the listed endpoints (never DELETE, never updates)', () => {
