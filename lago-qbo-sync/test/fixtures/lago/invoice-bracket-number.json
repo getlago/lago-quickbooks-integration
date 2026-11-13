@@ -1,0 +1,30 @@
+{
+  "_scenario": "Brief §6 bugs #1/#2: a '[' in the Lago number, and a customer name with an apostrophe. Untaxed, total 25.00.",
+  "lago_id": "inv-0000-0000-0000-000000000006",
+  "number": "[AC]-202610-006",
+  "issuing_date": "2026-10-22",
+  "payment_due_date": "2026-11-21",
+  "invoice_type": "subscription",
+  "status": "finalized",
+  "payment_status": "pending",
+  "currency": "USD",
+  "taxes_amount_cents": 0,
+  "total_amount_cents": 2500,
+  "customer": {
+    "lago_id": "cus-0000-0000-0000-000000000004",
+    "external_id": "oneil_004",
+    "name": "O'Neil Analytics",
+    "email": "ap@oneil.example",
+    "currency": "USD"
+  },
+  "fees": [
+    {
+      "lago_id": "fee-0009",
+      "amount_cents": 2500,
+      "taxes_amount_cents": 0,
+      "units": "1.0",
+      "item": { "type": "subscription", "code": "startup", "name": "Startup", "invoice_display_name": null }
+    }
+  ],
+  "credits": []
+}

@@ -1,0 +1,16 @@
+{
+  "_scenario": "Brief §6 bug #3: LAGO-DEMO-202610-004-CN001 is 26 characters; QBO DocNumber max is 21.",
+  "lago_id": "cn-0000-0000-0000-000000000003",
+  "number": "LAGO-DEMO-202610-004-CN001",
+  "invoice_number": "LAGO-DEMO-202610-004",
+  "issuing_date": "2026-10-20",
+  "reason": "other",
+  "currency": "USD",
+  "total_amount_cents": 1000,
+  "taxes_amount_cents": 0,
+  "coupons_adjustment_amount_cents": 0,
+  "customer": { "lago_id": "cus-0000-0000-0000-000000000001", "external_id": "acme_001", "name": "Acme Robotics" },
+  "items": [
+    { "lago_id": "cni-0004", "amount_cents": 1000, "fee": { "taxes_rate": 0, "item": { "type": "charge", "code": "api_calls", "name": "API calls" } } }
+  ]
+}

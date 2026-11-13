@@ -1,0 +1,12 @@
+# This repository is PUBLIC. Secrets and local state of lago-qbo-sync/ must never be committed.
+.env
+.env.*
+!.env.example
+**/mappings.yaml
+*.token.json
+*.token.json.lock
+.seed/
+node_modules/
+dist/
+*.zip
+.DS_Store

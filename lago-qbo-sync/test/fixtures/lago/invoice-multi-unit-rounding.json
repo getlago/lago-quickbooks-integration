@@ -1,0 +1,48 @@
+{
+  "_scenario": "Untaxed multi-unit fees: 10.00 for 3 seats (does not divide evenly), 9.99 for 3 seats (3.33 each), 10.01 for 0.5 units (20.02 each). Total 30.00.",
+  "lago_id": "inv-0000-0000-0000-000000000004",
+  "number": "ACME-202610-004",
+  "issuing_date": "2026-10-22",
+  "payment_due_date": "2026-11-21",
+  "invoice_type": "subscription",
+  "status": "finalized",
+  "payment_status": "pending",
+  "currency": "USD",
+  "taxes_amount_cents": 0,
+  "prepaid_credit_amount_cents": 0,
+  "total_amount_cents": 3000,
+  "customer": {
+    "lago_id": "cus-0000-0000-0000-000000000001",
+    "external_id": "acme_001",
+    "name": "Acme Robotics",
+    "email": "billing@acme.example",
+    "currency": "USD"
+  },
+  "fees": [
+    {
+      "lago_id": "fee-0005",
+      "amount_cents": 1000,
+      "taxes_amount_cents": 0,
+      "units": "3.0",
+      "precise_unit_amount": "3.3333333333",
+      "item": { "type": "charge", "code": "seats", "name": "Seats", "invoice_display_name": null }
+    },
+    {
+      "lago_id": "fee-0006",
+      "amount_cents": 999,
+      "taxes_amount_cents": 0,
+      "units": "3",
+      "precise_unit_amount": "3.33",
+      "item": { "type": "charge", "code": "seats", "name": "Seats (prorated)", "invoice_display_name": null }
+    },
+    {
+      "lago_id": "fee-0007",
+      "amount_cents": 1001,
+      "taxes_amount_cents": 0,
+      "units": "0.5",
+      "precise_unit_amount": "20.02",
+      "item": { "type": "charge", "code": "storage_gb", "name": "Storage", "invoice_display_name": "Storage (GB)" }
+    }
+  ],
+  "credits": []
+}

@@ -1,5 +1,7 @@
 # Lago to QuickBooks Integration via N8N
 
+> **New: pull-based sync, no n8n needed.** [`lago-qbo-sync/`](lago-qbo-sync/) is a scheduled CLI job that pulls invoices, credit notes, payments and voids from the Lago API and posts them to QuickBooks Online, one-way and safe to rerun. It ports this workflow's logic and fixes its known issues. Status: tested against a QuickBooks sandbox, **not yet production-ready**. Start with [lago-qbo-sync/README.md](lago-qbo-sync/README.md) or, to try it, [lago-qbo-sync/TESTING.md](lago-qbo-sync/TESTING.md).
+
 A complete integration solution that synchronizes billing data from [Lago](https://www.getlago.com/) to [QuickBooks Online](https://quickbooks.intuit.com/) using [N8N](https://n8n.io/) as the middleware.
 
 ## Overview
