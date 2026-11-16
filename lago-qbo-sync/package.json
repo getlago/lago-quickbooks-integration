@@ -1,0 +1,30 @@
+{
+  "name": "lago-qbo-sync",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Scheduled pull sync of Lago billing documents into QuickBooks Online",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "sync": "npm run build --silent && node --env-file=.env dist/src/cli/index.js sync",
+    "dry-run": "npm run build --silent && node --env-file=.env dist/src/cli/index.js dry-run",
+    "check-config": "npm run build --silent && node --env-file=.env dist/src/cli/index.js check-config",
+    "auth": "npm run build --silent && node --env-file=.env dist/src/cli/index.js auth",
+    "seed": "npm run build --silent && node --env-file=.env dist/scripts/seed.js",
+    "integration": "npm run build --silent && node --env-file=.env dist/scripts/integration.js"
+  },
+  "dependencies": {
+    "yaml": "2.9.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "_scenario": "Credit note without items (n8n fallback: one NON line for the total). Untaxed, total 12.00.",
+  "lago_id": "cn-0000-0000-0000-000000000004",
+  "number": "ACME-202610-005-CN001",
+  "invoice_number": "ACME-202610-005",
+  "issuing_date": "2026-10-23",
+  "reason": null,
+  "currency": "USD",
+  "total_amount_cents": 1200,
+  "taxes_amount_cents": 0,
+  "customer": { "lago_id": "cus-0000-0000-0000-000000000003", "external_id": "cust_ext_003" },
+  "items": []
+}

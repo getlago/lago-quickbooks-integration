@@ -1,0 +1,12 @@
+# Security and version updates for lago-qbo-sync/ and the CI actions it pins.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /lago-qbo-sync
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

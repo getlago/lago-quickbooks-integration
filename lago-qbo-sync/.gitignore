@@ -1,0 +1,23 @@
+node_modules/
+dist/
+coverage/
+
+# Secrets: only .env.example is committed (brief §7.2)
+.env
+.env.*
+!.env.example
+
+# Real config may name a production realm; only the example is committed
+mappings.yaml
+
+# Token store and lock must live outside the repo; this guards against mistakes
+*.token.json
+*.lock
+
+.DS_Store
+
+# Seeding manifests (codes and ids of test-org resources created by npm run seed)
+.seed/
+
+# Release archives made with git archive
+*.zip

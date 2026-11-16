@@ -1,0 +1,18 @@
+{
+  "_scenario": "Wallet top-up invoice (invoice_type credit): out of scope, skipped and counted (PLAN.md Q6).",
+  "lago_id": "inv-0000-0000-0000-000000000007",
+  "number": "ACME-202610-007",
+  "issuing_date": "2026-10-22",
+  "payment_due_date": "2026-10-22",
+  "invoice_type": "credit",
+  "status": "finalized",
+  "payment_status": "succeeded",
+  "currency": "USD",
+  "taxes_amount_cents": 0,
+  "total_amount_cents": 5000,
+  "customer": { "lago_id": "cus-0000-0000-0000-000000000001", "external_id": "acme_001", "name": "Acme Robotics" },
+  "fees": [
+    { "lago_id": "fee-0010", "amount_cents": 5000, "units": "50.0", "item": { "type": "credit", "code": "credit", "name": "Credits" } }
+  ],
+  "credits": []
+}

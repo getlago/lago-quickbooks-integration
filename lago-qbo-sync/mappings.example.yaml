@@ -1,0 +1,33 @@
+# Copy to mappings.yaml. This file is shareable: it must never contain secrets.
+# Validated at startup by src/config/schema.ts; unknown keys are rejected.
+
+environment: sandbox              # sandbox | production (production defaults to dry-run unless --apply)
+
+qbo:
+  realm_id: "1234567890123456"
+  default_item_id: "1"            # fallback item: unmapped item codes, fees without a code, credit lines
+  discount_account_id: "1"        # DiscountAccountRef for before-tax credits (coupons, progressive billing)
+  tax_code_id: ""                 # empty = no TxnTaxDetail override (MAPPING.md "Tax Mapping")
+  minor_version: 75               # Intuit ignores 1-74 since 2025-08-01 (PLAN.md F5)
+
+items:                            # Lago item code -> QBO Item ID
+  onboarding_fee: "1"
+
+lago:
+  api_url: "https://api.getlago.com/api/v1"   # EU: https://api.eu.getlago.com/api/v1
+  invoice_prefix_rules:
+    allowed_pattern: "^[A-Za-z0-9-]+$"
+    max_docnumber_length: 21      # QBO DocNumber limit
+
+sync:
+  lookback_days: 45               # invoices and credit notes, by issuing_date (wide on purpose: late finalization, outages)
+  payment_lookback_days: 45
+  void_lookback_days: 45
+  reconcile_lookback_days: 45     # read-only "missing_in_qbo" report
+  reconcile_max_lookups: 1000     # cap if batched DocNumber IN (...) lookups are unavailable
+  sync_payments: false            # off until the bookkeeper confirms who books payments
+  sync_voids: true
+  max_requests_per_second: 5      # QBO limit is 10/s and 500/min per realm
+  max_concurrent: 1               # QBO limit is 10
+  lago_max_requests_per_second: 10  # Lago limit is 50/s per organization
+  lago_max_concurrent: 4          # parallel Lago reads (detail GETs); QBO stays at max_concurrent

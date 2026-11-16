@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Pre-commit guard for a PUBLIC repository: refuses to commit secrets or local state.
+# Enable once per clone, from the repository root:
+#   git config core.hooksPath lago-qbo-sync/scripts/hooks
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+hook_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+config="$hook_dir/../../.gitleaks.toml"
+
+# 1. Files that must never be committed, whatever their content.
+blocked="$(git diff --cached --name-only --diff-filter=ACMR | grep -E '(^|/)\.env(\..+)?$|(^|/)mappings\.yaml$|\.token\.json(\.lock)?$|(^|/)\.seed/' | grep -v -E '(^|/)\.env\.example$' || true)"
+if [ -n "$blocked" ]; then
+  echo "pre-commit: refusing to commit files that hold secrets or local state:" >&2
+  echo "$blocked" | sed 's/^/  /' >&2
+  echo "Unstage them (git restore --staged <file>). They are listed in .gitignore for a reason." >&2
+  exit 1
+fi
+
+# 2. Content scan of what is staged.
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks git --staged --config "$config" --redact --no-banner "$root" || {
+    echo "pre-commit: gitleaks found a possible secret in the staged changes (shown redacted above)." >&2
+    echo "Remove it. If it was ever real, rotate it now: assume it is leaked." >&2
+    exit 1
+  }
+else
+  echo "pre-commit: gitleaks is not installed, so staged content was NOT scanned (only file names were)." >&2
+  echo "Install it (https://github.com/gitleaks/gitleaks, e.g. 'brew install gitleaks'). CI scans every push anyway." >&2
+fi

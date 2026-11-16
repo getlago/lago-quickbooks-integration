@@ -1,0 +1,31 @@
+{
+  "_scenario": "Minimal one-off invoice: customer has only an external_id, no email, no currency; fee has no item names, no description, no units; no due date; no credits key at all. Total 42.00.",
+  "lago_id": "inv-0000-0000-0000-000000000005",
+  "number": "ACME-202610-005",
+  "issuing_date": "2026-10-22",
+  "payment_due_date": null,
+  "invoice_type": "one_off",
+  "status": "finalized",
+  "payment_status": "pending",
+  "currency": "USD",
+  "taxes_amount_cents": 0,
+  "total_amount_cents": 4200,
+  "customer": {
+    "lago_id": "cus-0000-0000-0000-000000000003",
+    "external_id": "cust_ext_003",
+    "name": "",
+    "firstname": null,
+    "lastname": null,
+    "legal_name": null,
+    "email": null,
+    "currency": null
+  },
+  "fees": [
+    {
+      "lago_id": "fee-0008",
+      "amount_cents": 4200,
+      "taxes_amount_cents": null,
+      "item": { "type": "add_on", "code": "onboarding_fee", "name": null, "invoice_display_name": null }
+    }
+  ]
+}

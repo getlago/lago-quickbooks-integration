@@ -1,0 +1,21 @@
+{
+  "_scenario": "PLAN.md F9/Q4: credit note on an invoice that had a coupon. Item at gross 90.00, coupon share 9.00, tax 20% on 81.00 = 16.20, total 97.20. The n8n mapping posts 90.00 + 16.20 = 106.20, so the document must fail.",
+  "lago_id": "cn-0000-0000-0000-000000000002",
+  "number": "ACME-202610-001-CN002",
+  "invoice_number": "ACME-202610-001",
+  "issuing_date": "2026-10-23",
+  "reason": "order_change",
+  "currency": "USD",
+  "total_amount_cents": 9720,
+  "taxes_amount_cents": 1620,
+  "sub_total_excluding_taxes_amount_cents": 8100,
+  "coupons_adjustment_amount_cents": 900,
+  "customer": { "lago_id": "cus-0000-0000-0000-000000000001", "external_id": "acme_001", "name": "Acme Robotics" },
+  "items": [
+    {
+      "lago_id": "cni-0003",
+      "amount_cents": 9000,
+      "fee": { "taxes_rate": 20.0, "item": { "type": "subscription", "code": "startup", "name": "Startup" } }
+    }
+  ]
+}

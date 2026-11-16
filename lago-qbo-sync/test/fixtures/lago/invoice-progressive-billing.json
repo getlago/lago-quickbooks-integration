@@ -1,0 +1,43 @@
+{
+  "_scenario": "Untaxed usage fee of 200.00 with 80.00 already billed by progressive billing (before-taxes credit, item type 'invoice'). Total 120.00.",
+  "lago_id": "inv-0000-0000-0000-000000000002",
+  "number": "ACME-202610-002",
+  "issuing_date": "2026-10-21",
+  "payment_due_date": "2026-11-20",
+  "invoice_type": "subscription",
+  "status": "finalized",
+  "payment_status": "pending",
+  "currency": "USD",
+  "fees_amount_cents": 20000,
+  "progressive_billing_credit_amount_cents": 8000,
+  "taxes_amount_cents": 0,
+  "prepaid_credit_amount_cents": 0,
+  "total_amount_cents": 12000,
+  "customer": {
+    "lago_id": "cus-0000-0000-0000-000000000001",
+    "external_id": "acme_001",
+    "name": "Acme Robotics",
+    "legal_name": "Acme Robotics Inc.",
+    "email": "billing@acme.example",
+    "currency": "USD"
+  },
+  "fees": [
+    {
+      "lago_id": "fee-0003",
+      "amount_cents": 20000,
+      "taxes_amount_cents": 0,
+      "taxes_rate": 0,
+      "units": "1000.0",
+      "precise_unit_amount": "0.2",
+      "item": { "type": "charge", "code": "compute_hours", "name": "Compute hours", "invoice_display_name": "Compute (hours)" }
+    }
+  ],
+  "credits": [
+    {
+      "lago_id": "cred-0002",
+      "amount_cents": 8000,
+      "before_taxes": true,
+      "item": { "type": "invoice", "code": "ACME-202610-PB1", "name": "Progressive billing" }
+    }
+  ]
+}
